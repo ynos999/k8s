@@ -1,0 +1,42 @@
+---
+- name: Install Helm (official script) on all masters
+  hosts: masters
+  become: yes
+  tasks:
+
+    - name: Download Helm install script
+      get_url:
+        url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        dest: /tmp/get-helm-3
+        mode: '0755'
+
+    - name: Run Helm install script
+      command: /tmp/get-helm-3
+      args:
+        creates: /usr/local/bin/helm
+
+    - name: Verify Helm installation
+      command: helm version
+      register: helm_version
+
+    - name: Show Helm version
+      debug:
+        var: helm_version.stdout
+    
+    - name: Add Traefik Helm repo
+      shell: helm repo add traefik https://helm.traefik.io/traefik
+      args:
+        creates: /tmp/traefik_repo_added
+
+    - name: Update Helm repos
+      shell: helm repo update
+
+    - name: Install Traefik Ingress Controller via Helm
+      shell: >
+        helm upgrade --install traefik traefik/traefik
+        --namespace traefik
+        --create-namespace
+        --set service.type=LoadBalancer
+        --set rbac.enabled=true
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf

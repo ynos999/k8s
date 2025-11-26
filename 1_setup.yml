@@ -1,0 +1,55 @@
+---
+- name: Server setup for masters and workers
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Create user wolf
+      ansible.builtin.user:
+        name: wolf
+        groups: sudo
+        append: yes
+        shell: /bin/bash
+
+    - name: Configure sudo without password
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/wolf
+        content: "wolf ALL=(ALL) NOPASSWD:ALL\n"
+        mode: '0440'
+
+    - name: Set hostname for nodes
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Update /etc/hosts
+      ansible.builtin.blockinfile:
+        path: /etc/hosts
+        block: |
+          46.62.220.209 master1
+          65.108.85.35 master2
+          # 10.105.28.45 master3
+          46.62.204.152 worker1
+          # 10.105.28.47 worker2
+
+    - name: Copy SSH key for user wolf (authorized_keys like ssh-copy-id)
+      ansible.posix.authorized_key:
+        user: wolf
+        state: present
+        key: "{{ lookup('file', '~/.ssh/id_ed25519_vm.pub') }}"
+
+    - name: Configure SSH daemon - disable password login, root login etc.
+      ansible.builtin.blockinfile:
+        path: /etc/ssh/sshd_config
+        marker: "# {mark} ANSIBLE MANAGED BLOCK SSH"
+        block: |
+          PasswordAuthentication no
+          PermitRootLogin no
+          PubkeyAuthentication yes
+          HostKey /etc/ssh/ssh_host_ed25519_key
+          PubkeyAcceptedAlgorithms ssh-ed25519
+          HostkeyAlgorithms ssh-ed25519
+
+    - name: Restart SSH service
+      ansible.builtin.service:
+        name: ssh
+        state: restarted

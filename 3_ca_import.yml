@@ -1,0 +1,29 @@
+---
+- name: Import custom CA certificate to all VMs
+  hosts: all
+  become: yes
+
+  vars:
+    ca_cert_src: "ca.crt"   # Šeit jāieliek publiskais CA sertifikāts
+    ca_cert_dest: "/usr/local/share/ca-certificates/ca.crt"
+
+  tasks:
+
+    - name: Copy CA certificate to VM
+      copy:
+        src: "{{ ca_cert_src }}"
+        dest: /tmp/ca.crt
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Move CA certificate to trust store
+      command: cp /tmp/ca.crt "{{ ca_cert_dest }}"
+
+    - name: Update CA certificates on system
+      command: update-ca-certificates
+
+    - name: Remove temporary CA file
+      file:
+        path: /tmp/ca.crt
+        state: absent

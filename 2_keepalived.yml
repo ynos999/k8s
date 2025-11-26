@@ -1,0 +1,61 @@
+---
+- name: Install & Configure KeepAlived on Masters
+  hosts: masters
+  become: yes
+
+  vars:
+    vip: "10.10.0.30/32"
+    interface: "enp7s0"
+    auth_pass: "K8sHApass"
+
+    keepalived_nodes:
+      master1:
+        state: MASTER
+        priority: 150
+      master2:
+        state: BACKUP
+        priority: 100
+      master3:
+        state: BACKUP
+        priority: 50
+
+  tasks:
+
+    - name: Install keepalived
+      apt:
+        name: keepalived
+        state: present
+        update_cache: yes
+
+    - name: Generate keepalived.conf for each master dynamically
+      copy:
+        dest: /etc/keepalived/keepalived.conf
+        content: |
+          global_defs {
+            router_id {{ inventory_hostname }}
+          }
+
+          vrrp_instance VI_1 {
+              state {{ keepalived_nodes[inventory_hostname].state }}
+              priority {{ keepalived_nodes[inventory_hostname].priority }}
+              interface {{ interface }}
+              virtual_router_id 51
+              advert_int 1
+
+              authentication {
+                  auth_type PASS
+                  auth_pass {{ auth_pass }}
+              }
+
+              virtual_ipaddress {
+                  {{ vip }} dev {{ interface }} label {{ interface }}:vip
+              }
+
+              allow_shared_ip
+          }
+
+    - name: Restart keepalived service
+      systemd:
+        name: keepalived
+        enabled: yes
+        state: restarted
