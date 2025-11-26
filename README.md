@@ -1,3 +1,5 @@
+sudo apt update && sudo apt install software-properties-common
+sudo add-apt-repository --yes --update ppa:ansible/ansible && sudo apt install ansible -y
 # 0.1 Uz datora izģenerēt ssh atslēgu.
 sudo ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519_vm
 # 0.2 rediģējiet hosts.ini failu.
