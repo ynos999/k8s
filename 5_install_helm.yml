@@ -31,12 +31,12 @@
     - name: Update Helm repos
       shell: helm repo update
 
-    - name: Install Traefik Ingress Controller via Helm
-      shell: >
-        helm upgrade --install traefik traefik/traefik
-        --namespace traefik
-        --create-namespace
-        --set service.type=LoadBalancer
-        --set rbac.enabled=true
-      environment:
-        KUBECONFIG: /etc/kubernetes/admin.conf
+    # - name: Install Traefik Ingress Controller via Helm
+    #   shell: >
+    #     helm upgrade --install traefik traefik/traefik
+    #     --namespace traefik
+    #     --create-namespace
+    #     --set service.type=LoadBalancer
+    #     --set rbac.enabled=true
+    #   environment:
+    #     KUBECONFIG: /etc/kubernetes/admin.conf

@@ -37,6 +37,24 @@
         state: present
         key: "{{ lookup('file', '~/.ssh/id_ed25519_vm.pub') }}"
 
+    # --- Privātās atslēgas kopēšana ---
+
+    - name: Ensure .ssh directory exists for wolf
+      ansible.builtin.file:
+        path: /home/wolf/.ssh
+        state: directory
+        owner: wolf
+        group: wolf
+        mode: '0700'
+
+    - name: Copy private SSH key to wolf's home directory
+      ansible.builtin.copy:
+        src: ~/.ssh/id_ed25519_vm
+        dest: /home/wolf/.ssh/id_ed25519_vm
+        owner: wolf
+        group: wolf
+        mode: '0600'
+    # ------------------------------------
     - name: Configure SSH daemon - disable password login, root login etc.
       ansible.builtin.blockinfile:
         path: /etc/ssh/sshd_config

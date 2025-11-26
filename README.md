@@ -6,6 +6,13 @@ sudo ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519_vm
 openssl genrsa -aes256 -out ca.key 4096
 Izveidojiet pašparakstītu CA sertifikātu
 openssl req -new -x509 -sha256 -key ca.key -out ca.crt -days 3650
+# 0.5 Kopēt privāto atslēgu (šo pieliku 1_setup)
+sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm wolf@master1:~/.ssh/
+sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm wolf@master2:~/.ssh/
+sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm wolf@master3:~/.ssh/
+sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm wolf@worker1:~/.ssh/
+sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm wolf@worker2:~/.ssh/
+sudo chmod 600 ~/.ssh/id_ed25519_vm
 ---
 # 1. ansible-playbook -i hosts.ini 1_setup.yml
 ---
