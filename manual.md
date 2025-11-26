@@ -282,7 +282,7 @@ metadata:
 spec:
   # Definējiet adrešu diapazonu ārējiem pakalpojumiem
   addresses:
-  - 10.10.1.240-10.10.1.250
+  - 10.10.1.30-10.10.1.30
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
@@ -306,7 +306,7 @@ helm install traefik traefik/traefik \
   --namespace kube-system \
   --set service.type=LoadBalancer \
   --set service.loadBalancerIP="10.10.1.30" \
-  --set service.annotations."metallb\.universe\.tf/address-pool"="external-ip-pool" \
+  --set service.annotations."metallb\.io/address-pool"="external-ip-pool" \
   --set providers.kubernetesIngress.ingressClass=traefik \
   --set providers.kubernetesIngress.publishedService.enabled=true \
   --set providers.kubernetesIngress.publishedService.ingressClassName=traefik
@@ -362,16 +362,7 @@ EOF
 kubectl apply -f ingress.yaml
 sudo nano ingress.yaml
 
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: redirect-to-https
-  namespace: default
-spec:
-  redirectScheme:
-    scheme: https
-    permanent: true
----
+# IngressRoute (KORIĢĒTS)
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -379,24 +370,30 @@ metadata:
   namespace: default
 spec:
   entryPoints:
-    - web # HTTP 80
-    - websecure # HTTPS 443
-  routes:
-    # 1. HTTP 80 -> HTTPS 443 PĀRADRESĀCIJA (Uz Host: 10.10.1.30)
-    - match: "Host(`10.10.1.30`)"
+    - web
+    - websecure
+  
+  # 1. HTTP -> HTTPS PĀRADRESĀCIJA
+  routes: 
+    - match: "Host(`10.10.1.30`)" # Izmantojiet saskaņoto VIP!
       kind: Rule
-      services:
-        - name: whoami-service
-          port: 80
+      entryPoints:
+        - web # Piesaista pie HTTP (80)
       middlewares:
         - name: redirect-to-https
-  routes:
-    # 2. HTTPS 443 NODAĻA (FAKTISKĀ TRAFIKA)
-    - match: "Host(`10.10.1.30`)"
-      kind: Rule
       services:
         - name: whoami-service
           port: 80
+  
+  # 2. FAKTISKĀ HTTPS TRAFIKA
+    - match: "Host(`10.10.1.30`)" # Izmantojiet saskaņoto VIP!
+      kind: Rule
+      entryPoints:
+        - websecure # Piesaista pie HTTPS (443)
+      services:
+        - name: whoami-service
+          port: 80
+  
   tls:
     secretName: default-tls-secret
 
