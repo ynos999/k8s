@@ -1,20 +1,22 @@
-sudo apt update && sudo apt install software-properties-common
+sudo apt update && sudo apt install software-properties-common -y
 sudo add-apt-repository --yes --update ppa:ansible/ansible && sudo apt install ansible -y
-# 0.1 Uz datora izģenerēt ssh atslēgu.
+# 0.1 Uz datora izģenerēt ssh atslēgu vai iekopēt.
 sudo ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519_vm
-# 0.2 rediģējiet hosts.ini failu.
-# 0.3 rediģējiet hosts_wolf.ini failu.
-# 0.4 Ģenerēt CA privāto atslēgu
+# 0.2 rediģējiet hosts.ini failu. Labot ansible_host, ansible_user, ansible_password
+# 0.3 rediģējiet hosts_wolf.ini failu. Labot ansible_host, ansible_user, ansible_password
+# 0.4 Ģenerēt CA privāto atslēgu vai kopēt no mapes. Mapē jābūt ca.crt.
 openssl genrsa -aes256 -out ca.key 4096
-Izveidojiet pašparakstītu CA sertifikātu
 openssl req -new -x509 -sha256 -key ca.key -out ca.crt -days 3650
-# 0.5 Kopēt privāto atslēgu (šo pieliku 1_setup)
+# 0.5 Labojam /etc/hosts 1_setup.yml, 46.62.220.209 master1, 65.108.85.35 master2
+# 0.6 Labojam 2_keepalived.yml vip: "10.10.1.30/32", interface: "enp7s0" (ip a)
+# 0.7 Labojam 6_metalb_traefik.yml vip: 10.10.1.30 metallb_ip_range: "10.10.1.30-10.10.1.30", demo_host: demo.www.latloto.lv
+# 0.8 Kopēt privāto atslēgu (šo pieliku 1_setup)
 sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm wolf@master1:~/.ssh/
 sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm wolf@master2:~/.ssh/
 sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm wolf@master3:~/.ssh/
 sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm wolf@worker1:~/.ssh/
 sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm wolf@worker2:~/.ssh/
-sudo chmod 600 ~/.ssh/id_ed25519_vm
+sudo chmod 600 ~/.ssh/id_ed25519_vm 
 ---
 # 1. ansible-playbook -i hosts.ini 1_setup.yml
 ---
@@ -28,13 +30,13 @@ master1 10.10.0.2
 master2 10.10.0.3
 VIP: 10.10.0.30
 ===
-Uz master1 jāizpilda:
+Uz master1 jāizpilda (controlPlaneEndpoint labojam):
 
 cat <<EOF | sudo tee kubeadm-config.yaml
 apiVersion: kubeadm.k8s.io/v1beta3
 kind: ClusterConfiguration
 kubernetesVersion: stable
-controlPlaneEndpoint: "10.10.0.30:6443"
+controlPlaneEndpoint: "10.10.0.30:6443" # Labojam!
 networking:
   podSubnet: "10.244.0.0/16"
   serviceSubnet: "10.96.0.0/12"
@@ -42,7 +44,7 @@ networking:
 apiVersion: kubeadm.k8s.io/v1beta3
 kind: InitConfiguration
 localAPIEndpoint:
-  bindAddress: 10.10.0.2 # <--- IEKŠĒJĀ IP
+  bindAddress: 10.10.0.2 # <--- IEKŠĒJĀ IP jālabo
   bindPort: 6443
 nodeRegistration:
   criSocket: "unix:///var/run/crio/crio.sock"
@@ -83,6 +85,8 @@ curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 helm repo add traefik https://traefik.github.io/charts
 helm repo update
 
+JĀLABO IP!
+
 helm install traefik traefik/traefik \
   --namespace kube-system \
   --set service.type=LoadBalancer \
@@ -100,6 +104,8 @@ kubectl create secret generic -n metallb-system memberlist --from-literal=secret
 kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.3/config/manifests/metallb-native.yaml
 
 kubectl get pods -n metallb-system
+
+JĀLABO POOL!
 kubectl get svc webhook-service -n metallb-system
 
 vai:

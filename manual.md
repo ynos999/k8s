@@ -68,6 +68,7 @@ HostkeyAlgorithms ssh-ed25519
 # sudo systemctl restart sshd
 -----------------------------
 3. Uz 3 master nodēm uzlikt KeepAlived ar vienu kopīgu virtuālo IP
+# Labojam vip: "10.10.1.30/32", interface: "enp7s0" (ip a)
 
 # sudo apt install keepalived -y
 # sudo nano /etc/keepalived/keepalived.conf
@@ -203,12 +204,14 @@ sudo systemctl start crio && sudo systemctl enable crio && sudo systemctl status
 sudo apt-mark hold kubelet kubeadm kubectl
 sudo kubeadm version
 sudo systemctl enable --now kubelet
+
+# Labojam controlPlaneEndpoint, vip: 10.10.1.30 metallb_ip_range: "10.10.1.30-10.10.1.30", demo_host: demo.www.latloto.lv
 ====================
 cat <<EOF | sudo tee kubeadm-config.yaml
 apiVersion: kubeadm.k8s.io/v1beta3
 kind: ClusterConfiguration
 kubernetesVersion: stable
-controlPlaneEndpoint: "10.10.1.30:6443"
+controlPlaneEndpoint: "10.10.1.30:6443" # Jālabo!
 networking:
   podSubnet: "10.244.0.0/16"
   serviceSubnet: "10.96.0.0/12"
@@ -216,7 +219,7 @@ networking:
 apiVersion: kubeadm.k8s.io/v1beta3
 kind: InitConfiguration
 localAPIEndpoint:
-  bindAddress: 10.10.0.10 # <--- IEKŠĒJĀ IP
+  bindAddress: 10.10.0.10 # <--- IEKŠĒJĀ IP JĀLABO
   bindPort: 6443
 nodeRegistration:
   criSocket: "unix:///var/run/crio/crio.sock"
@@ -224,7 +227,7 @@ EOF
 ====================
 sudo kubeadm init --config=kubeadm-config.yaml --upload-certs
 ===================================================
-Korektā kubeadm init komanda (Uz Master 1). Izpildi augšējo komandu...
+Korektā kubeadm init komanda (Uz Master 1). Izpildi augšējo komandu... JĀLABO
 
 sudo kubeadm init \
   --control-plane-endpoint "10.10.1.30:6443" \
