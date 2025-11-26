@@ -1,3 +1,4 @@
+cat /etc/os-release
 sudo apt update && sudo apt install software-properties-common -y
 sudo add-apt-repository --yes --update ppa:ansible/ansible && sudo apt install ansible -y
 # 0.1 Uz datora izģenerēt ssh atslēgu vai iekopēt.

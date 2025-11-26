@@ -1,0 +1,34 @@
+---
+- name: Install Helm (official script) on all masters (Rocky/Alma/CentOS compatible)
+  hosts: masters
+  become: yes
+  tasks:
+
+    - name: Download Helm install script
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        dest: /tmp/get-helm-3
+        mode: '0755'
+
+    - name: Run Helm install script
+      ansible.builtin.command: /tmp/get-helm-3
+      args:
+        # Pārbauda, vai Helm binārais fails jau pastāv, lai izvairītos no atkārtotas instalēšanas
+        creates: /usr/local/bin/helm
+
+    - name: Verify Helm installation
+      ansible.builtin.command: helm version
+      register: helm_version
+
+    - name: Show Helm version
+      ansible.builtin.debug:
+        var: helm_version.stdout
+
+    - name: Add Traefik Helm repo (using native module)
+      kubernetes.core.helm_repository:
+        name: traefik
+        repo_url: https://helm.traefik.io/traefik
+        state: present
+        
+    - name: Update Helm repos
+      ansible.builtin.command: helm repo update

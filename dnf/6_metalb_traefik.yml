@@ -1,0 +1,174 @@
+---
+- name: MetalLB + Traefik + TLS Ingress (Rocky/Alma/CentOS compatible)
+  hosts: masters
+  become: no
+  vars:
+    metallb_namespace: metallb-system
+    traefik_namespace: traefik
+    vip: 10.10.1.30
+    metallb_ip_range: "10.10.1.30-10.10.1.30"
+    traefik_release: traefik
+    tls_secret_name: demo-tls
+    demo_host: demo.www.latloto.lv
+    
+  tasks:
+
+    # --- Create Namespaces (using k8s module for idempotency) ---
+    - name: Create MetalLB namespace
+      kubernetes.core.k8s:
+        name: "{{ metallb_namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: Create Traefik namespace
+      kubernetes.core.k8s:
+        name: "{{ traefik_namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    # --- Install MetalLB via Helm ---
+    # MetalLB is installed via Helm 3, which is universal across Linux distributions.
+    
+    - name: Add MetalLB repo
+      kubernetes.core.helm_repository:
+        name: metallb
+        repo_url: https://metallb.github.io/metallb
+        state: present
+    
+    - name: Install MetalLB
+      kubernetes.core.helm:
+        name: metallb
+        chart_ref: metallb/metallb
+        namespace: "{{ metallb_namespace }}"
+        create_namespace: false
+        release_state: present
+        values:
+          configInline:
+            address-pools:
+              - name: layer2-pool
+                protocol: layer2
+                addresses:
+                  - "{{ metallb_ip_range }}"
+
+    # --- Install Traefik via Helm ---
+    
+    - name: Add Traefik repo
+      kubernetes.core.helm_repository:
+        name: traefik
+        repo_url: https://helm.traefik.io/traefik
+        state: present
+        
+    - name: Install Traefik with LoadBalancer VIP
+      kubernetes.core.helm:
+        name: "{{ traefik_release }}"
+        chart_ref: traefik/traefik
+        namespace: "{{ traefik_namespace }}"
+        release_state: present
+        values:
+          service:
+            type: LoadBalancer
+            loadBalancerIP: "{{ vip }}"
+          rbac:
+            enabled: true
+
+    # --- Create TLS secret ---
+    
+    - name: Create self-signed TLS certificate (demo)
+      ansible.builtin.shell: |
+        openssl req -x509 -nodes -days 365 \
+          -newkey rsa:2048 \
+          -keyout /tmp/tls.key \
+          -out /tmp/tls.crt \
+          -subj "/CN={{ demo_host }}/O=Demo"
+      args:
+        creates: /tmp/tls.crt
+
+    - name: Create Kubernetes TLS secret
+      kubernetes.core.k8s:
+        state: present
+        namespace: "{{ traefik_namespace }}"
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ tls_secret_name }}"
+          type: kubernetes.io/tls
+          data:
+            tls.crt: "{{ lookup('file', '/tmp/tls.crt') | b64encode }}"
+            tls.key: "{{ lookup('file', '/tmp/tls.key') | b64encode }}"
+
+    # --- Create demo resources ---
+
+    - name: Create demo deployment
+      kubernetes.core.k8s:
+        state: present
+        namespace: "{{ traefik_namespace }}"
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: demo
+            labels:
+              app: demo
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: demo
+            template:
+              metadata:
+                labels:
+                  app: demo
+              spec:
+                containers:
+                - name: nginx
+                  image: nginx
+                  ports:
+                  - containerPort: 80
+
+    - name: Expose demo service
+      kubernetes.core.k8s:
+        state: present
+        namespace: "{{ traefik_namespace }}"
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: demo
+          spec:
+            selector:
+              app: demo
+            ports:
+            - port: 80
+              targetPort: 80
+
+    - name: Create Ingress with TLS + redirect 80→443
+      kubernetes.core.k8s:
+        state: present
+        namespace: "{{ traefik_namespace }}"
+        definition:
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: demo-ingress
+            annotations:
+              traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+              traefik.ingress.kubernetes.io/redirect-entry-point: websecure
+          spec:
+            tls:
+            - hosts:
+              - "{{ demo_host }}"
+              secretName: "{{ tls_secret_name }}"
+            rules:
+            - host: "{{ demo_host }}"
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: demo
+                      port:
+                        number: 80
