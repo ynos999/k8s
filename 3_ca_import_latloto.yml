@@ -1,0 +1,37 @@
+---
+- name: Import multiple custom CA certificates to all VMs
+  hosts: all
+  become: yes
+
+  vars:
+    ca_certificates:
+      - "latloto-ca.crt"
+      - "latloto-intermediate-server-v1.crt"
+      - "latloto-intermediate-server-v2.crt"
+      - "wildcard.iloto.lldev.crt"   # publiskais, OK
+    ca_cert_dest_dir: "/usr/local/share/ca-certificates"
+
+  tasks:
+
+    - name: Ensure CA certificate directory exists
+      file:
+        path: "{{ ca_cert_dest_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy all CA certificates to trust store
+      copy:
+        src: "{{ item }}"
+        dest: "{{ ca_cert_dest_dir }}/{{ item }}"
+        owner: root
+        group: root
+        mode: '0644'
+      loop: "{{ ca_certificates }}"
+
+    - name: Update CA certificates on system
+      command: update-ca-certificates
+      register: update_result
+
+    - name: Show update-ca-certificates output
+      debug:
+        var: update_result.stdout

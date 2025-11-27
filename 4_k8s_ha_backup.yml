@@ -24,25 +24,9 @@
           - curl
           - gnupg
           - software-properties-common
-    
-    - name: Install Chrony (recommended for Kubernetes clusters)
-      apt:
-        name: chrony
-        state: present
-        update_cache: yes
 
-    - name: Enable Chrony time synchronization
-      systemd:
-        name: chrony
-        state: started
-        enabled: yes
-
-    - name: Verify NTP sync
-      command: timedatectl show -p NTPSynchronized
-      register: ntp_status
-
-    - debug:
-        msg: "NTP synchronization = {{ ntp_status.stdout }}"    
+    - name: Enable NTP time sync
+      command: timedatectl set-ntp true
 
     - name: Load required modules
       copy:
@@ -68,22 +52,22 @@
         enabled: no
         state: stopped
 
+
     - name: Add Kubernetes Repo & Key
       shell: |
         KUBERNETES_VERSION=v1.32
         curl -fsSL https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/deb/Release.key \
           | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
         echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/deb/ /" \
-          | tee /etc/apt/sources.list.d/kubernetes.list
+          > /etc/apt/sources.list.d/kubernetes.list
 
     - name: Add CRI-O Repo & Key
       shell: |
-        CRIO_VERSION=1.32
-        OS=xUbuntu_22.04
-        curl -fsSL https://download.opensuse.org/repositories/devel:/kubic:/cri-o:/${CRIO_VERSION}/${OS}/Release.key \
+        CRIO_VERSION=v1.32
+        curl -fsSL https://download.opensuse.org/repositories/isv:/cri-o:/stable:/$CRIO_VERSION/deb/Release.key \
           | gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg
-        echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://download.opensuse.org/repositories/devel:/kubic:/cri-o:/${CRIO_VERSION}/${OS}/ /" \
-          | tee /etc/apt/sources.list.d/crio.list
+        echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://download.opensuse.org/repositories/isv:/cri-o:/stable:/$CRIO_VERSION/deb/ /" \
+          > /etc/apt/sources.list.d/cri-o.list
 
     - name: Install Kubernetes + CRI-O
       apt:
@@ -91,7 +75,6 @@
         state: present
         name:
           - cri-o
-          - cri-o-runc
           - kubelet
           - kubeadm
           - kubectl
