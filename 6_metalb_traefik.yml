@@ -1,7 +1,7 @@
 ---
 - name: MetalLB + Traefik + TLS Ingress
   hosts: masters
-  become: yes
+  become: no
   vars:
     metallb_namespace: metallb-system
     traefik_namespace: traefik
