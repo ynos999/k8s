@@ -26,9 +26,9 @@
         path: /etc/hosts
         block: |
           46.62.220.209 master1
-          65.108.85.35 master2
+          # 65.108.85.35 master2
           # 10.105.28.45 master3
-          46.62.204.152 worker1
+          # 46.62.204.152 worker1
           # 10.105.28.47 worker2
 
     - name: Copy SSH key for user wolf (authorized_keys like ssh-copy-id)
@@ -55,7 +55,34 @@
         group: wolf
         mode: '0600'
     # ------------------------------------
-    - name: Configure SSH daemon - disable password login, root login etc.
+    - name: Fix SSH config — replace PasswordAuthentication yes → no
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PasswordAuthentication yes'
+        line: 'PasswordAuthentication no'
+        state: present
+        backup: yes  # drošībai
+    
+    - name: Fix SSH config — replace PermitRootLogin yes → no
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PermitRootLogin yes'
+        line: 'PermitRootLogin no'
+        state: present
+
+    - name: Check if SSH config already matches desired settings
+      ansible.builtin.shell: |
+        grep -Fxq "PasswordAuthentication no" /etc/ssh/sshd_config &&
+        grep -Fxq "PermitRootLogin no" /etc/ssh/sshd_config &&
+        grep -Fxq "PubkeyAuthentication yes" /etc/ssh/sshd_config &&
+        grep -Fxq "HostKey /etc/ssh/ssh_host_ed25519_key" /etc/ssh/sshd_config &&
+        grep -Fxq "PubkeyAcceptedAlgorithms ssh-ed25519" /etc/ssh/sshd_config &&
+        grep -Fxq "HostkeyAlgorithms ssh-ed25519" /etc/ssh/sshd_config
+      register: ssh_config_ok
+      failed_when: false
+      changed_when: false
+
+    - name: Configure SSH daemon only if settings differ
       ansible.builtin.blockinfile:
         path: /etc/ssh/sshd_config
         marker: "# {mark} ANSIBLE MANAGED BLOCK SSH"
@@ -66,6 +93,7 @@
           HostKey /etc/ssh/ssh_host_ed25519_key
           PubkeyAcceptedAlgorithms ssh-ed25519
           HostkeyAlgorithms ssh-ed25519
+      when: ssh_config_ok.rc != 0
 
     - name: Restart SSH service
       ansible.builtin.service:

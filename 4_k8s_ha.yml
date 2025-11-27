@@ -13,6 +13,35 @@
         path: /etc/fstab
         regexp: '^(.+swap.+)$'
         replace: '# \1'
+    
+    - name: Remove old CRI-O repo files
+      file:
+        path: "/etc/apt/sources.list.d/{{ item }}"
+        state: absent
+      loop:
+        - "crio.list"
+        - "cri-o.list"
+      ignore_errors: true
+
+    - name: Remove old kubernetes repo files
+      file:
+        path: "/etc/apt/sources.list.d/{{ item }}"
+        state: absent
+      loop:
+        - "kubernetes.list"
+      ignore_errors: true
+    
+    - name: Remove old kubernetes GPG key
+      file:
+        path: "/etc/apt/keyrings/kubernetes-apt-keyring.gpg"
+        state: absent
+      ignore_errors: true
+
+    - name: Remove old CRI-O GPG key
+      file:
+        path: "/etc/apt/keyrings/cri-o-apt-keyring.gpg"
+        state: absent
+      ignore_errors: true
 
     - name: Install Base System Packages
       apt:
@@ -68,22 +97,27 @@
         enabled: no
         state: stopped
 
-    - name: Add Kubernetes Repo & Key
+    - name: Add Kubernetes v 1.33 Repo & Key
       shell: |
-        KUBERNETES_VERSION=v1.32
+        KUBERNETES_VERSION=v1.33
         curl -fsSL https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/deb/Release.key \
           | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
         echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/deb/ /" \
           | tee /etc/apt/sources.list.d/kubernetes.list
+  
+    - name: Add CRI-O v1.33 stable repo
+      copy:
+        dest: "/etc/apt/sources.list.d/isv:cri-o:stable:v1.33.list"
+        content: "deb http://download.opensuse.org/repositories/isv:/cri-o:/stable:/v1.33/deb/ /"
+        mode: '0644'
 
-    - name: Add CRI-O Repo & Key
-      shell: |
-        CRIO_VERSION=1.32
-        OS=xUbuntu_22.04
-        curl -fsSL https://download.opensuse.org/repositories/devel:/kubic:/cri-o:/${CRIO_VERSION}/${OS}/Release.key \
-          | gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg
-        echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://download.opensuse.org/repositories/devel:/kubic:/cri-o:/${CRIO_VERSION}/${OS}/ /" \
-          | tee /etc/apt/sources.list.d/crio.list
+    - name: Add CRI-O v1.33 stable GPG key
+      shell: >
+        curl -fsSL https://download.opensuse.org/repositories/isv:cri-o:stable:v1.33/deb/Release.key
+        | gpg --dearmor
+        | tee /etc/apt/trusted.gpg.d/isv_cri-o_stable_v1.33.gpg > /dev/null
+      args:
+        creates: "/etc/apt/trusted.gpg.d/isv_cri-o_stable_v1.33.gpg"
 
     - name: Install Kubernetes + CRI-O
       apt:
@@ -91,7 +125,6 @@
         state: present
         name:
           - cri-o
-          - cri-o-runc
           - kubelet
           - kubeadm
           - kubectl

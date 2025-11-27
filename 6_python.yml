@@ -1,0 +1,12 @@
+- name: Install Python Kubernetes module via apt
+  hosts: masters
+  become: yes
+  tasks:
+    - name: Ensure python3-pip and python3-kubernetes installed
+      apt:
+        name:
+          - python3-pip
+          - python3-kubernetes
+        state: present
+        update_cache: yes
+

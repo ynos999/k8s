@@ -194,11 +194,11 @@ curl -fsSL https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/deb/Release.key
 
 echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:$KUBERNETES_VERSION/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
 
-curl -fsSL https://download.opensuse.org/repositories/isv:/cri-o:/stable:/$CRIO_VERSION/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg
+echo 'deb http://download.opensuse.org/repositories/isv:/cri-o:/stable:/v1.33/deb/ /' | sudo tee /etc/apt/sources.list.d/isv:cri-o:stable:v1.33.list
 
-echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://download.opensuse.org/repositories/isv:/cri-o:/stable:/$CRIO_VERSION/deb/ /" | tee /etc/apt/sources.list.d/cri-o.list
+curl -fsSL https://download.opensuse.org/repositories/isv:cri-o:stable:v1.33/deb/Release.key | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/isv_cri-o_stable_v1.33.gpg > /dev/null
 
-sudo apt update && sudo apt upgrade -y && sudo apt install -y cri-o cri-o-runc cri-tools kubelet kubeadm kubectl
+sudo apt update && sudo apt upgrade -y && sudo apt install -y cri-o kubelet kubeadm kubectl
 
 sudo systemctl start crio && sudo systemctl enable crio && sudo systemctl status crio
 sudo apt-mark hold kubelet kubeadm kubectl
@@ -211,15 +211,15 @@ cat <<EOF | sudo tee kubeadm-config.yaml
 apiVersion: kubeadm.k8s.io/v1beta3
 kind: ClusterConfiguration
 kubernetesVersion: stable
-controlPlaneEndpoint: "10.10.1.30:6443" # Jālabo!
+controlPlaneEndpoint: "10.10.0.30:6443" # Labojam!
 networking:
-  podSubnet: "10.244.0.0/16"
-  serviceSubnet: "10.96.0.0/12"
+  podSubnet: "172.16.0.0/16"
+  serviceSubnet: "172.17.0.0/12"
 ---
 apiVersion: kubeadm.k8s.io/v1beta3
 kind: InitConfiguration
 localAPIEndpoint:
-  bindAddress: 10.10.0.10 # <--- IEKŠĒJĀ IP JĀLABO
+  bindAddress: 10.10.0.2 # <--- IEKŠĒJĀ IP jālabo
   bindPort: 6443
 nodeRegistration:
   criSocket: "unix:///var/run/crio/crio.sock"
@@ -247,9 +247,34 @@ mkdir -p $HOME/.kube
 sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
 sudo chown $(id -u):$(id -g) $HOME/.kube/config
 
-Weave Net uzstādīšana:
+Alternatively, if you are the root user, you can run:
 
-# Pēc kubeadm init un konfigurācijas iestatīšanas uz Master 1
+  export KUBECONFIG=/etc/kubernetes/admin.conf
+
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+You can now join any number of control-plane nodes running the following command on each as root:
+
+  kubeadm join 10.10.0.30:6443 --token alhl7q.9qjsmb8wqrx2qp2p \
+	--discovery-token-ca-cert-hash sha256:18edb9156e84cbea365c7d9753ff0bda96122846c4b19ac5ea77b4943dfe22ef \
+	--control-plane --certificate-key 85f34af99293db62de2210410a49ba0ac3717726cb0bd03368ebd1de6d7c07dc
+
+Please note that the certificate-key gives access to cluster sensitive data, keep it secret!
+As a safeguard, uploaded-certs will be deleted in two hours; If necessary, you can use
+"kubeadm init phase upload-certs --upload-certs" to reload certs afterward.
+
+Then you can join any number of worker nodes by running the following on each as root:
+
+kubeadm join 10.10.0.30:6443 --token alhl7q.9qjsmb8wqrx2qp2p \
+	--discovery-token-ca-cert-hash sha256:18edb9156e84cbea365c7d9753ff0bda96122846c4b19ac5ea77b4943dfe22ef
+
+kubectl get nodes
+kubectl get po -A
+kubectl get pods -n kube-system
+
+# Pēc kubeadm init un konfigurācijas iestatīšanas uz Master 1 weave
 kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s.yaml
 
 ---
@@ -299,6 +324,21 @@ spec:
 EOF
 
 kubectl apply -f metallb-config.yaml
+
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: metallb-system
+  name: config
+data:
+  config: |
+    address-pools:
+    - name: layer2-pool
+      protocol: layer2
+      addresses:
+      - 10.10.0.30-10.10.0.30
+EOF
 
 # Uz Master 1 VM Helm:
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash

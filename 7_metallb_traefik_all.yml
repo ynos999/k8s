@@ -1,0 +1,201 @@
+---
+- name: MetalLB + Traefik + TLS Ingress
+  hosts: masters
+  become: yes
+  vars:
+    metallb_namespace: metallb-system
+    traefik_namespace: traefik
+    vip: 10.10.0.30                     # Jūsu HA VIP (KeepAlived)
+    metallb_ip_range: "10.10.0.30-10.10.0.30"
+    traefik_release: traefik
+    tls_secret_name: wildcard-tls
+    demo_host: hello.iloto.lldev         # Demo host
+    cert_path: /root/certs               # Folder with wildcard cert/key
+
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+  tasks:
+
+    # -------------------------------
+    # Namespaces
+    # -------------------------------
+    - name: Ensure MetalLB namespace exists
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: "{{ metallb_namespace }}"
+        state: present
+
+    - name: Ensure Traefik namespace exists
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: "{{ traefik_namespace }}"
+        state: present
+
+    # -------------------------------
+    # MetalLB
+    # -------------------------------
+    - name: Add MetalLB Helm repo
+      kubernetes.core.helm_repository:
+        name: metallb
+        repo_url: https://metallb.github.io/metallb
+        force_update: yes
+
+    # Install MetalLB chart
+    - name: Install or upgrade MetalLB
+      kubernetes.core.helm:
+        name: metallb
+        chart_ref: metallb/metallb
+        release_namespace: "{{ metallb_namespace }}"
+        create_namespace: false
+        values: {}   # bez configInline
+        wait: yes
+
+    # Create MetalLB ConfigMap (Layer2)
+    - name: Configure MetalLB Layer2 IP pool
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            namespace: "{{ metallb_namespace }}"
+            name: config
+          data:
+            config: |
+              address-pools:
+              - name: layer2-pool
+                protocol: layer2
+                addresses:
+                - "{{ metallb_ip_range }}"
+
+    # -------------------------------
+    # Traefik
+    # -------------------------------
+    - name: Add Traefik Helm repo
+      kubernetes.core.helm_repository:
+        name: traefik
+        repo_url: https://helm.traefik.io/traefik
+        force_update: yes
+
+    - name: Install or upgrade Traefik
+      kubernetes.core.helm:
+        name: "{{ traefik_release }}"
+        chart_ref: traefik/traefik
+        release_namespace: "{{ traefik_namespace }}"
+        create_namespace: false
+        update_repo_cache: yes
+        values:
+          service:
+            type: LoadBalancer
+            loadBalancerIP: "{{ vip }}"
+            annotations:
+              metallb.universe.tf/allow-shared-ip: "k8s-shared-vip"
+          rbac:
+            enabled: true
+          ports:
+            web:
+              redirectTo: websecure
+            websecure:
+              tls:
+                enabled: true
+        wait: yes
+
+    # -------------------------------
+    # TLS Secret
+    # -------------------------------
+    - name: Ensure Traefik TLS secret exists
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ tls_secret_name }}"
+            namespace: "{{ traefik_namespace }}"
+          type: kubernetes.io/tls
+          data:
+            tls.crt: "{{ lookup('file', cert_path + '/wildcard.crt') | b64encode | string }}"
+            tls.key: "{{ lookup('file', cert_path + '/wildcard.key') | b64encode | string }}"
+
+    # -------------------------------
+    # Demo Deployment + Service
+    # -------------------------------
+    - name: Ensure demo deployment exists
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: demo
+            namespace: "{{ traefik_namespace }}"
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: demo
+            template:
+              metadata:
+                labels:
+                  app: demo
+              spec:
+                containers:
+                  - name: demo
+                    image: nginx
+                    ports:
+                      - containerPort: 80
+
+    - name: Ensure demo service exists
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: demo
+            namespace: "{{ traefik_namespace }}"
+          spec:
+            selector:
+              app: demo
+            ports:
+              - protocol: TCP
+                port: 80
+                targetPort: 80
+            type: ClusterIP
+
+    # -------------------------------
+    # Ingress with TLS + HTTP->HTTPS redirect
+    # -------------------------------
+    - name: Ensure demo Ingress exists
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: demo-ingress
+            namespace: "{{ traefik_namespace }}"
+            annotations:
+              traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+              traefik.ingress.kubernetes.io/router.tls: "true"
+              traefik.ingress.kubernetes.io/router.entrypoints.web.http.redirections.entryPoint.to: websecure
+              traefik.ingress.kubernetes.io/router.entrypoints.web.http.redirections.entryPoint.scheme: https
+          spec:
+            tls:
+              - hosts:
+                  - "{{ demo_host }}"
+                secretName: "{{ tls_secret_name }}"
+            rules:
+              - host: "{{ demo_host }}"
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: demo
+                          port:
+                            number: 80

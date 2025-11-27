@@ -4,7 +4,7 @@
   become: yes
 
   vars:
-    vip: "10.10.1.30/32"
+    vip: "10.10.0.30/32"
     interface: "enp7s0"
     auth_pass: "K8sHApass"
 

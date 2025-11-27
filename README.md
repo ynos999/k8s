@@ -39,8 +39,8 @@ kind: ClusterConfiguration
 kubernetesVersion: stable
 controlPlaneEndpoint: "10.10.0.30:6443" # Labojam!
 networking:
-  podSubnet: "10.244.0.0/16"
-  serviceSubnet: "10.96.0.0/12"
+  podSubnet: "172.16.0.0/16"
+  serviceSubnet: "172.17.0.0/12"
 ---
 apiVersion: kubeadm.k8s.io/v1beta3
 kind: InitConfiguration
@@ -54,28 +54,43 @@ EOF
 sudo kubeadm init --config=kubeadm-config.yaml --upload-certs
 
 ===
+Your Kubernetes control-plane has initialized successfully!
+
 To start using your cluster, you need to run the following as a regular user:
+
 mkdir -p $HOME/.kube
 sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
 sudo chown $(id -u):$(id -g) $HOME/.kube/config
 
+Alternatively, if you are the root user, you can run:
+
+  export KUBECONFIG=/etc/kubernetes/admin.conf
+
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
 You can now join any number of control-plane nodes running the following command on each as root:
 
-  kubeadm join 10.10.0.30:6443 --token b21j0t.9zq1dbp1p09eu8dc \
-	--discovery-token-ca-cert-hash sha256:32e163147af6afffb6f90b6da9c9f71d03b2ca8bf3bc4b1c9556e9514ed869ee \
-	--control-plane --certificate-key abe474090300517159cc7741abd6703fc498ab25c6acb72df0031cf1df8ccb2b
+  kubeadm join 10.10.0.30:6443 --token alhl7q.9qjsmb8wqrx2qp2p \
+	--discovery-token-ca-cert-hash sha256:18edb9156e84cbea365c7d9753ff0bda96122846c4b19ac5ea77b4943dfe22ef \
+	--control-plane --certificate-key 85f34af99293db62de2210410a49ba0ac3717726cb0bd03368ebd1de6d7c07dc
+
+Please note that the certificate-key gives access to cluster sensitive data, keep it secret!
+As a safeguard, uploaded-certs will be deleted in two hours; If necessary, you can use
+"kubeadm init phase upload-certs --upload-certs" to reload certs afterward.
 
 Then you can join any number of worker nodes by running the following on each as root:
 
-kubeadm join 10.10.0.30:6443 --token b21j0t.9zq1dbp1p09eu8dc \
-	--discovery-token-ca-cert-hash sha256:32e163147af6afffb6f90b6da9c9f71d03b2ca8bf3bc4b1c9556e9514ed869ee
-
-# Pēc kubeadm init un konfigurācijas iestatīšanas uz Master 1 weave
-kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s.yaml
+kubeadm join 10.10.0.30:6443 --token alhl7q.9qjsmb8wqrx2qp2p \
+	--discovery-token-ca-cert-hash sha256:18edb9156e84cbea365c7d9753ff0bda96122846c4b19ac5ea77b4943dfe22ef
 
 kubectl get nodes
 kubectl get po -A
 kubectl get pods -n kube-system
+
+# Pēc kubeadm init un konfigurācijas iestatīšanas uz Master 1 weave
+kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s.yaml
 ---
 7. Uzlikt MetalLB (Layer 2) + Traefik kā Ingress Controller
 # ansible-playbook -i hosts_wolf.ini 5_install_helm.yml
@@ -85,6 +100,21 @@ vai
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 helm repo add traefik https://traefik.github.io/charts
 helm repo update
+
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: metallb-system
+  name: config
+data:
+  config: |
+    address-pools:
+    - name: layer2-pool
+      protocol: layer2
+      addresses:
+      - 10.10.0.30-10.10.0.30
+EOF
 
 JĀLABO IP!
 

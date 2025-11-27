@@ -1,27 +1,33 @@
 ---
-- name: Import multiple custom CA certificates to all VMs
+- name: Import custom CA and wildcard certificates
   hosts: all
   become: yes
 
   vars:
+    # Loto CA sertifikāti
     ca_certificates:
       - "latloto-ca.crt"
       - "latloto-intermediate-server-v1.crt"
       - "latloto-intermediate-server-v2.crt"
-      - "wildcard.iloto.lldev.crt"   # publiskais, OK
-    ca_cert_dest_dir: "/usr/local/share/ca-certificates"
+      - "wildcard.iloto.lldev.crt"
+    ca_cert_dest_dir: "/usr/local/share/ca-certificates/loto"
+
+    # Wildcard cert for Traefik
+    wildcard_cert_name: "wildcard.iloto.lldev"
+    wildcard_cert_dest_dir: "/root/certs"
 
   tasks:
 
+    # 1. Sistēmas CA sertifikātu mape
     - name: Ensure CA certificate directory exists
       file:
         path: "{{ ca_cert_dest_dir }}"
         state: directory
         mode: '0755'
 
-    - name: Copy all CA certificates to trust store
+    - name: Copy CA certificates directly to system trust store
       copy:
-        src: "{{ item }}"
+        src: "loto/{{ item }}"
         dest: "{{ ca_cert_dest_dir }}/{{ item }}"
         owner: root
         group: root
@@ -31,7 +37,33 @@
     - name: Update CA certificates on system
       command: update-ca-certificates
       register: update_result
+      changed_when: "'added' in update_result.stdout or 'done' in update_result.stdout"
 
-    - name: Show update-ca-certificates output
+    - name: Show output from update-ca-certificates
       debug:
         var: update_result.stdout
+
+    # 2. Wildcard sertifikāta mape Traefik TLS secret
+    - name: Ensure /root/certs directory exists
+      file:
+        path: "{{ wildcard_cert_dest_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Copy wildcard certificate and key to /root/certs
+      copy:
+        src: "loto/{{ wildcard_cert_name }}.crt"
+        dest: "{{ wildcard_cert_dest_dir }}/wildcard.crt"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - copy:
+        src: "loto/{{ wildcard_cert_name }}.key"
+        dest: "{{ wildcard_cert_dest_dir }}/wildcard.key"
+        owner: root
+        group: root
+        mode: '0600'
+
