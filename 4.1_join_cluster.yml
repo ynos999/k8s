@@ -1,0 +1,24 @@
+---
+# Master1 veic kubeadm init
+- hosts: master1
+  become: yes
+  roles:
+    - k8s-init-master
+
+# Pārējie master mezgli pievienojas kontrolplānam
+- hosts: masters:!master1
+  become: yes
+  roles:
+    - k8s-join-controlplane
+
+# Strādnieki pievienojas kā worker
+- hosts: workers
+  become: yes
+  roles:
+    - k8s-join-workers
+
+# Master1 instalē weave
+- hosts: master1
+  become: yes
+  roles:
+    - weave

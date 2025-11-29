@@ -1,0 +1,33 @@
+---
+- name: Pārbaudīt, vai worker jau pievienots
+  stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: kubelet_conf_worker
+
+- name: Pievienot worker mezglus
+  command: "{{ hostvars['master1'].join_cmd_worker }}"
+  when: kubelet_conf_worker.stat.exists == false
+
+# Izveidot .kube direktoriju wolf lietotājam
+- name: Izveidot ~/.kube direktoriju
+  become: yes
+  file:
+    path: /home/wolf/.kube
+    state: directory
+    owner: wolf
+    group: wolf
+    mode: '0755'
+
+# Kopēt kubeconfig uz wolf profilu
+- name: Kopēt kubeconfig uz wolf profilu
+  become: yes
+  command: cp /etc/kubernetes/admin.conf /home/wolf/.kube/config
+
+# Labot faila īpašnieku un tiesības
+- name: Labot faila īpašnieku un tiesības
+  become: yes
+  file:
+    path: /home/wolf/.kube/config
+    owner: wolf
+    group: wolf
+    mode: '0600'

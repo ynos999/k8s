@@ -302,7 +302,7 @@ kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.3/confi
 kubectl get pods -n metallb-system
 kubectl get svc webhook-service -n metallb-system
 
-Pieņemsim, ka jūsu KeepAlived VIP ir 10.10.1.30.
+Pieņemsim, ka jūsu KeepAlived VIP ir 192.168.1.190.
 
 Izveidojiet konfigurācijas failu (metallb-config.yaml):
 nano metallb-config.yaml
@@ -317,7 +317,7 @@ metadata:
 spec:
   # Definējiet adrešu diapazonu ārējiem pakalpojumiem
   addresses:
-  - 10.10.1.30-10.10.1.30
+  - 192.168.1.190-192.168.1.190
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
@@ -344,7 +344,7 @@ data:
     - name: layer2-pool
       protocol: layer2
       addresses:
-      - 10.10.0.30-10.10.0.30
+      - 192.168.1.190-192.168.1.190
 EOF
 
 # Uz Master 1 VM Helm:
@@ -355,7 +355,7 @@ helm repo update
 helm install traefik traefik/traefik \
   --namespace kube-system \
   --set service.type=LoadBalancer \
-  --set service.loadBalancerIP="10.10.1.30" \
+  --set service.loadBalancerIP="192.168.1.190" \
   --set service.annotations."metallb\.io/address-pool"="external-ip-pool" \
   --set providers.kubernetesIngress.ingressClass=traefik \
   --set providers.kubernetesIngress.publishedService.enabled=true \
@@ -425,7 +425,7 @@ spec:
   
   # 1. HTTP -> HTTPS PĀRADRESĀCIJA
   routes: 
-    - match: "Host(`10.10.1.30`)" # Izmantojiet saskaņoto VIP!
+    - match: "Host(`192.168.1.190`)" # Izmantojiet saskaņoto VIP!
       kind: Rule
       entryPoints:
         - web # Piesaista pie HTTP (80)
@@ -436,7 +436,7 @@ spec:
           port: 80
   
   # 2. FAKTISKĀ HTTPS TRAFIKA
-    - match: "Host(`10.10.1.30`)" # Izmantojiet saskaņoto VIP!
+    - match: "Host(`192.168.1.190`)" # Izmantojiet saskaņoto VIP!
       kind: Rule
       entryPoints:
         - websecure # Piesaista pie HTTPS (443)
@@ -512,3 +512,33 @@ ssh -i .\id_ed25519_vm -L 6443:192.168.1.199:6443 -N wolf@192.168.1.199
 
 helm list --all-namespaces
 kubectl get pods -n traefik
+kubectl describe pod traefik-5db9bb6877-bwxgh -n traefik
+kubectl logs traefik-5db9bb6877-bwxgh -n traefik
+
+
+kubectl create secret generic metallb-memberlist \
+  --namespace metallb-system \
+  --from-literal=secretkey="$(openssl rand -base64 128)"
+
+
+Ja izmantoji Helm instalāciju:
+helm -n metallb-system uninstall metallb
+Tas dzēs visus Helm resursus (Deployment, Service, ConfigMap utt.), kas saistīti ar MetalLB release.
+Ja Helm release bija bloķēts, var dzēst arī Helm secret:
+kubectl -n metallb-system delete secret sh.helm.release.v1.metallb.v1
+kubectl -n metallb-system delete secret sh.helm.release.v1.metallb.v2
+
+
+sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl create secret tls wildcard-tls \
+  --cert=/root/certs/wildcard.crt \
+  --key=/root/certs/wildcard.key \
+  -n traefik
+
+
+sudo systemctl stop kubelet
+sudo systemctl stop crio
+sudo systemctl restart crio
+sudo systemctl restart kubelet
+
+sudo systemctl restart kubelet
+kubectl get nodes -o wide

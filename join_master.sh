@@ -1,1 +1,0 @@
-kubeadm join 192.168.1.190:6443 --token 68gnta.l8k19gr9yj7j29ow --discovery-token-ca-cert-hash sha256:b3dcc5ffe0bfb5fe5270a0ca7b79effe8ecb9ecaeb615bd63d28f13f05890cb9 --control-plane --certificate-key key:

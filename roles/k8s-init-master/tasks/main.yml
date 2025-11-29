@@ -1,0 +1,89 @@
+---
+# Pārbaudīt, vai cluster jau inicializēts
+- name: Pārbaudīt, vai /etc/kubernetes/admin.conf eksistē
+  stat:
+    path: /etc/kubernetes/admin.conf
+  register: kubeadm_admin_conf
+
+# Izveidot kubeadm config
+- name: Izveidot kubeadm config
+  copy:
+    dest: /root/kubeadm-config.yaml
+    content: |
+      apiVersion: kubeadm.k8s.io/v1beta4
+      kind: ClusterConfiguration
+      kubernetesVersion: stable-1.33
+      controlPlaneEndpoint: "192.168.1.199:6443"
+      networking:
+        podSubnet: "172.16.0.0/16"
+        serviceSubnet: "172.17.0.0/12"
+
+      ---
+      apiVersion: kubeadm.k8s.io/v1beta4
+      kind: InitConfiguration
+      nodeRegistration:
+        name: "master1"
+        criSocket: "unix:///var/run/crio/crio.sock"
+
+# Inicializēt cluster tikai, ja nav
+- name: kubeadm init uz master1
+  command: kubeadm init --config=/root/kubeadm-config.yaml --upload-certs
+  register: init_out
+  args:
+    creates: /etc/kubernetes/admin.conf
+  when: not kubeadm_admin_conf.stat.exists
+
+- debug:
+    var: init_out.stdout_lines
+  when: not kubeadm_admin_conf.stat.exists
+
+# Ja cluster jau ir, iegūst certificate key un join komandu
+- name: Iegūt certificate key
+  shell: kubeadm init phase upload-certs --upload-certs | tail -n1
+  register: cert_key
+  when: kubeadm_admin_conf.stat.exists
+
+- name: Iegūt MASTER join komandu
+  command: kubeadm token create --print-join-command --certificate-key {{ cert_key.stdout }}
+  register: join_out
+  when: kubeadm_admin_conf.stat.exists
+
+# Set facts MASTER un WORKER join komandas
+- set_fact:
+    join_cmd_master: >-
+      {{
+        (init_out.stdout | regex_search('kubeadm join[^\\n]+--control-plane[^\\n]+'))
+        if not kubeadm_admin_conf.stat.exists
+        else join_out.stdout
+      }}
+- set_fact:
+    join_cmd_worker: "{{ join_cmd_master | regex_replace('--control-plane.*', '') }}"
+
+- debug:
+    msg:
+      - "MASTER JOIN: {{ join_cmd_master }}"
+      - "WORKER JOIN: {{ join_cmd_worker }}"
+
+# Izveidot .kube direktoriju wolf lietotājam
+- name: Izveidot ~/.kube direktoriju
+  become: yes
+  file:
+    path: /home/wolf/.kube
+    state: directory
+    owner: wolf
+    group: wolf
+    mode: '0755'
+
+# Kopēt kubeconfig uz wolf profilu
+- name: Kopēt kubeconfig uz wolf profilu
+  become: yes
+  command: cp /etc/kubernetes/admin.conf /home/wolf/.kube/config
+
+# Labot faila īpašnieku un tiesības
+- name: Labot faila īpašnieku un tiesības
+  become: yes
+  file:
+    path: /home/wolf/.kube/config
+    owner: wolf
+    group: wolf
+    mode: '0600'

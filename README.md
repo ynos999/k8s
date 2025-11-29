@@ -57,7 +57,7 @@ EOF
 sudo kubeadm init --config=kubeadm-config.yaml --upload-certs
 
 ----
-Reset kubeadm
+Reset kubeadm:
 sudo kubeadm reset -f
 sudo systemctl stop kubelet
 sudo pkill kubelet
