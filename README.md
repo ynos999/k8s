@@ -21,49 +21,58 @@ sudo chmod 600 ~/.ssh/id_ed25519_vm
 ---
 # 1. ansible-playbook -i hosts.ini 1_setup.yml
 ---
+2 - 6.yml:
+# ansible-playbook -i hosts_wolf.ini master_playbook.yml
+
 # 2. ansible-playbook -i hosts_wolf.ini 2_keepalived.yml
 ---
 # 3. ansible-playbook -i hosts_wolf.ini 3_ca_import.yml
 ---
 # 4. ansible-playbook -i hosts_wolf.ini 4_k8s_ha.yml
 ===
-master1 10.10.0.2
-master2 10.10.0.3
-VIP: 10.10.0.30
+master1 192.168.1.199
+master2 192.168.1.198
+master3 192.168.1.197
+VIP: 192.168.1.190
 ===
 Uz master1 jāizpilda (controlPlaneEndpoint labojam):
 
 cat <<EOF | sudo tee kubeadm-config.yaml
-apiVersion: kubeadm.k8s.io/v1beta3
+apiVersion: kubeadm.k8s.io/v1beta4
 kind: ClusterConfiguration
-kubernetesVersion: stable
-controlPlaneEndpoint: "10.10.0.30:6443" # Labojam!
+kubernetesVersion: stable-1.33
+controlPlaneEndpoint: "192.168.1.190:6443"
 networking:
   podSubnet: "172.16.0.0/16"
   serviceSubnet: "172.17.0.0/12"
+
 ---
-apiVersion: kubeadm.k8s.io/v1beta3
+apiVersion: kubeadm.k8s.io/v1beta4
 kind: InitConfiguration
-localAPIEndpoint:
-  bindAddress: 10.10.0.2 # <--- IEKŠĒJĀ IP jālabo
-  bindPort: 6443
 nodeRegistration:
+  name: "master1"
   criSocket: "unix:///var/run/crio/crio.sock"
 EOF
 ===
 sudo kubeadm init --config=kubeadm-config.yaml --upload-certs
 
+----
+Reset kubeadm
+sudo kubeadm reset -f
+sudo systemctl stop kubelet
+sudo pkill kubelet
+sudo lsof -i :6443
+sudo lsof -i :2379
+sudo rm -rf /var/lib/etcd/*
+----
+
 ===
-Your Kubernetes control-plane has initialized successfully!
-
-To start using your cluster, you need to run the following as a regular user:
-
+Regular user:
 mkdir -p $HOME/.kube
 sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
 sudo chown $(id -u):$(id -g) $HOME/.kube/config
 
 Alternatively, if you are the root user, you can run:
-
   export KUBECONFIG=/etc/kubernetes/admin.conf
 
 You should now deploy a pod network to the cluster.
@@ -72,9 +81,9 @@ Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
 
 You can now join any number of control-plane nodes running the following command on each as root:
 
-  kubeadm join 10.10.0.30:6443 --token alhl7q.9qjsmb8wqrx2qp2p \
-	--discovery-token-ca-cert-hash sha256:18edb9156e84cbea365c7d9753ff0bda96122846c4b19ac5ea77b4943dfe22ef \
-	--control-plane --certificate-key 85f34af99293db62de2210410a49ba0ac3717726cb0bd03368ebd1de6d7c07dc
+  kubeadm join 192.168.1.190:6443 --token mn8ngd.c2icinibzb7ziity \
+        --discovery-token-ca-cert-hash sha256:be73ebeed224653500dcf3ee81c8a79f4ca354c6cec01b9c2fc13297d52a6380 \
+        --control-plane --certificate-key 5eaea2cba3f2977e32d02fff4e8a9f8dc7a3d80f83b40bbf632bbf6da4628762
 
 Please note that the certificate-key gives access to cluster sensitive data, keep it secret!
 As a safeguard, uploaded-certs will be deleted in two hours; If necessary, you can use
@@ -82,12 +91,18 @@ As a safeguard, uploaded-certs will be deleted in two hours; If necessary, you c
 
 Then you can join any number of worker nodes by running the following on each as root:
 
-kubeadm join 10.10.0.30:6443 --token alhl7q.9qjsmb8wqrx2qp2p \
-	--discovery-token-ca-cert-hash sha256:18edb9156e84cbea365c7d9753ff0bda96122846c4b19ac5ea77b4943dfe22ef
+kubeadm join 192.168.1.190:6443 --token mn8ngd.c2icinibzb7ziity \
+        --discovery-token-ca-cert-hash sha256:be73ebeed224653500dcf3ee81c8a79f4ca354c6cec01b9c2fc13297d52a6380
 
 kubectl get nodes
 kubectl get po -A
 kubectl get pods -n kube-system
+
+kubeadm token create
+kubeadm token create --print-join-command
+Then reload and restart kubelet:
+sudo systemctl daemon-reload
+sudo systemctl restart kubelet
 
 # Pēc kubeadm init un konfigurācijas iestatīšanas uz Master 1 weave
 kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s.yaml
@@ -164,3 +179,24 @@ kubectl apply -f metallb-config.yaml
 8. Panākt, lai viens un tas pats virtuālais IP apkalpo gan Kubernetes API, gan ārējo HTTP/HTTPS trafiku
 9. Atrisināt ARP konfliktu ar KeepAlived (allow-shared-ip triks)  
 10. Uzlikt TLS sertifikātu, 80 → 443 redirect un vienkāršu demo URL ar HTTPS
+
+Open Leans tunelis:
+ssh -i .\id_ed25519_vm -L 6443:192.168.1.199:6443 wolf@192.168.1.199
+scp -i .\id_ed25519_vm wolf@192.168.1.199:~/.kube/config C:\Users\wolf\.kube\
+ssh -i .\id_ed25519_vm -L 6443:192.168.1.199:6443 -N wolf@192.168.1.199
+
+netstat -ano | findstr 6443
+
+Labo 
+- cluster: C:\Users\wolf\.kube\config
+    # certificate-authority-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURCVENDQWUyZ0F3SUJBZ0lJZFg0WUxNRmk0em93RFFZSktvWklodmNOQVFFTEJRQXdGVEVUTUJFR0ExVUUKQXhNS2EzVmlaWEp1WlhSbGN6QWVGdzB5TlRFeE1qa3dPVE01TWpCYUZ3MHpOVEV4TWpjd09UUTBNakJhTUJVeApFekFSQmdOVkJBTVRDbXQxWW1WeWJtVjBaWE13Z2dFaU1BMEdDU3FHU0liM0RRRUJBUVVBQTRJQkR3QXdnZ0VLCkFvSUJBUURJRnFrOUh2VFRQQ1A2SlhxbUcraDZ3Z2FQbTRHNFZjbTA2eTE4WjUvNzMrYkIrUUFVclVhbDFiZ00KK2hHanY5K1hCUmxpRTZqZHR2YXh3MzZORWZCK29SSlhwMmdBYnROdkZiNW9ZS3AvakdyckJkeGw3UVdwSE9OZApSR3NxZDlnTEU5NzhCRmJhcE5XanBtaDBnRHh6OC95Qm1JeVBKanlpaWk0azRyVGxUcUFDYndMZGc4TVhSdndBCnFrVU4rU3J4Ymh2Nkp0dUNvQk9rQkhDb3dDeDJWUHRlOUtKUjVodFRKVlR1UU1tUjdwTGdoeDNsOXczZkFsRVMKUiszMjRtWXhMdnlrMExqVGRCT2lzOVlIWHRoMzNmd2RSWUZlaDNBNWtjSURMRFVTdXF1ajRNKzBnS0RXYXFJRQpuZk55cmZQMFlTL2pNaTA2YWlocjY3WTZEY01YQWdNQkFBR2pXVEJYTUE0R0ExVWREd0VCL3dRRUF3SUNwREFQCkJnTlZIUk1CQWY4RUJUQURBUUgvTUIwR0ExVWREZ1FXQkJRT0U2NkRNbHZzQmJmbkJxRkNMQUswZCtiTWh6QVYKQmdOVkhSRUVEakFNZ2dwcmRXSmxjbTVsZEdWek1BMEdDU3FHU0liM0RRRUJDd1VBQTRJQkFRQXBnUVMyaytETgpvcWZTcGZ4TzFxRXNkQVFxVm9nTTNlbnlvcjZiZlR6OFYvampYc01VdkdZVnU3RktSSURPemdpRXVONE5ha29yCkFVclVhVEE1bkZNTjhpdENXNVpRcnZYUG1EaER6RWRpdDVIUC9iOFc0bmowZThaVEhMMm9STEpqMEF3MGRPQUsKNEIvRW1pREFNdHRab0ZYbGlIUk9GTHA2dThLaFlOTnhZaTlkSUQreEpPN0VTWHoxMTcrMC9Ibzc3andIUTlNMwoveWhaTFlXalJvMFBTbFJhVFR1YzhRQ1hGcWUxbElEclNsc29DTHlkM3hnWmYzcjI2R0FKZzlsQ29CaDJpOUNnCklLMnQzSS9TQ0lSMTc0TEplZFVHRlJGc2x5RWZYMFRSeVEyaWE1NDZFaXFsNm9RZDJqRWZ1TXRBQ3hKc25jWmsKbk5UZ2VsV3FvRElICi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+    server: https://localhost:6443
+    insecure-skip-tls-verify: true
+
+kubectl get nodes     
+NAME      STATUS   ROLES           AGE   VERSION
+master1   Ready    control-plane   95m   v1.33.6
+master2   Ready    control-plane   88m   v1.33.6
+master3   Ready    control-plane   87m   v1.33.6
+
+choco install kubernetes-helm

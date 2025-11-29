@@ -68,7 +68,7 @@ HostkeyAlgorithms ssh-ed25519
 # sudo systemctl restart sshd
 -----------------------------
 3. Uz 3 master nodēm uzlikt KeepAlived ar vienu kopīgu virtuālo IP
-# Labojam vip: "10.10.1.30/32", interface: "enp7s0" (ip a)
+# Labojam vip: "192.168.1.190/32", interface: "enp7s0" (ip a)
 
 # sudo apt install keepalived -y
 # sudo nano /etc/keepalived/keepalived.conf
@@ -187,15 +187,12 @@ Uz visām VM instalēt CRI-O
 # sudo mkdir -p -m 755 /etc/apt/keyrings
 
 export OS=xUbuntu_22.04
-export KUBERNETES_VERSION=v1.32
+export KUBERNETES_VERSION=v1.33
 export CRIO_VERSION=v1.32
-
 curl -fsSL https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-
-echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:$KUBERNETES_VERSION/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
 
 echo 'deb http://download.opensuse.org/repositories/isv:/cri-o:/stable:/v1.33/deb/ /' | sudo tee /etc/apt/sources.list.d/isv:cri-o:stable:v1.33.list
-
 curl -fsSL https://download.opensuse.org/repositories/isv:cri-o:stable:v1.33/deb/Release.key | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/isv_cri-o_stable_v1.33.gpg > /dev/null
 
 sudo apt update && sudo apt upgrade -y && sudo apt install -y cri-o kubelet kubeadm kubectl
@@ -206,49 +203,53 @@ sudo kubeadm version
 sudo systemctl enable --now kubelet
 
 # Labojam controlPlaneEndpoint, vip: 10.10.1.30 metallb_ip_range: "10.10.1.30-10.10.1.30", demo_host: demo.www.latloto.lv
-====================
-cat <<EOF | sudo tee kubeadm-config.yaml
-apiVersion: kubeadm.k8s.io/v1beta3
-kind: ClusterConfiguration
-kubernetesVersion: stable
-controlPlaneEndpoint: "10.10.0.30:6443" # Labojam!
-networking:
-  podSubnet: "172.16.0.0/16"
-  serviceSubnet: "172.17.0.0/12"
----
-apiVersion: kubeadm.k8s.io/v1beta3
-kind: InitConfiguration
-localAPIEndpoint:
-  bindAddress: 10.10.0.2 # <--- IEKŠĒJĀ IP jālabo
-  bindPort: 6443
-nodeRegistration:
-  criSocket: "unix:///var/run/crio/crio.sock"
-EOF
-====================
-sudo kubeadm init --config=kubeadm-config.yaml --upload-certs
-===================================================
-Korektā kubeadm init komanda (Uz Master 1). Izpildi augšējo komandu... JĀLABO
-
-sudo kubeadm init \
-  --control-plane-endpoint "10.10.1.30:6443" \
-  --apiserver-bind-address	10.10.1.10 \
-  --upload-certs \
-  --pod-network-cidr 10.244.0.0/16 \
-  --cri-socket unix:///var/run/crio/crio.sock \
-  # Opcionāli, ja ir doti Service CIDR
-  # --service-cidr 10.96.0.0/12
-===================================================
 # sudo systemctl status keepalived
 # ip a show enp7s0
 
-Zem user wolf:
 
+master1 192.168.1.199
+master2 192.168.1.198
+master3 192.168.1.197
+VIP: 192.168.1.190
+===
+Uz master1 jāizpilda (controlPlaneEndpoint labojam):
+
+cat <<EOF | sudo tee kubeadm-config.yaml
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: stable-1.33
+controlPlaneEndpoint: "192.168.1.190:6443"
+networking:
+  podSubnet: "172.16.0.0/16"
+  serviceSubnet: "172.17.0.0/12"
+
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+nodeRegistration:
+  name: "master1"
+  criSocket: "unix:///var/run/crio/crio.sock"
+EOF
+===
+sudo kubeadm init --config=kubeadm-config.yaml --upload-certs
+
+----
+Reset kubeadm
+sudo kubeadm reset -f
+sudo systemctl stop kubelet
+sudo pkill kubelet
+sudo lsof -i :6443
+sudo lsof -i :2379
+sudo rm -rf /var/lib/etcd/*
+----
+
+===
+Regular user:
 mkdir -p $HOME/.kube
 sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
 sudo chown $(id -u):$(id -g) $HOME/.kube/config
 
 Alternatively, if you are the root user, you can run:
-
   export KUBECONFIG=/etc/kubernetes/admin.conf
 
 You should now deploy a pod network to the cluster.
@@ -257,9 +258,9 @@ Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
 
 You can now join any number of control-plane nodes running the following command on each as root:
 
-  kubeadm join 10.10.0.30:6443 --token alhl7q.9qjsmb8wqrx2qp2p \
-	--discovery-token-ca-cert-hash sha256:18edb9156e84cbea365c7d9753ff0bda96122846c4b19ac5ea77b4943dfe22ef \
-	--control-plane --certificate-key 85f34af99293db62de2210410a49ba0ac3717726cb0bd03368ebd1de6d7c07dc
+  kubeadm join 192.168.1.190:6443 --token mn8ngd.c2icinibzb7ziity \
+        --discovery-token-ca-cert-hash sha256:be73ebeed224653500dcf3ee81c8a79f4ca354c6cec01b9c2fc13297d52a6380 \
+        --control-plane --certificate-key 5eaea2cba3f2977e32d02fff4e8a9f8dc7a3d80f83b40bbf632bbf6da4628762
 
 Please note that the certificate-key gives access to cluster sensitive data, keep it secret!
 As a safeguard, uploaded-certs will be deleted in two hours; If necessary, you can use
@@ -267,12 +268,18 @@ As a safeguard, uploaded-certs will be deleted in two hours; If necessary, you c
 
 Then you can join any number of worker nodes by running the following on each as root:
 
-kubeadm join 10.10.0.30:6443 --token alhl7q.9qjsmb8wqrx2qp2p \
-	--discovery-token-ca-cert-hash sha256:18edb9156e84cbea365c7d9753ff0bda96122846c4b19ac5ea77b4943dfe22ef
+kubeadm join 192.168.1.190:6443 --token mn8ngd.c2icinibzb7ziity \
+        --discovery-token-ca-cert-hash sha256:be73ebeed224653500dcf3ee81c8a79f4ca354c6cec01b9c2fc13297d52a6380
 
 kubectl get nodes
 kubectl get po -A
 kubectl get pods -n kube-system
+
+kubeadm token create
+kubeadm token create --print-join-command
+Then reload and restart kubelet:
+sudo systemctl daemon-reload
+sudo systemctl restart kubelet
 
 # Pēc kubeadm init un konfigurācijas iestatīšanas uz Master 1 weave
 kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s.yaml
@@ -475,3 +482,33 @@ https://hostman.com/tutorials/how-to-install-a-kubernetes-cluster-on-ubuntu/
 
 # sudo kubeadm token create --print-join-command
 # sudo kubeadm init phase upload-certs --upload-certs
+
+Taint node-role.kubernetes.io/control-plane tiek noņemts no node.
+
+Tas ļauj, lai pods varētu tikt izvietots uz master mezgla, kas normāli tiek bloķēts.
+
+Ja tev nav worker mezgli, tad šis ir obligāts solis, lai metallb vai citi pods varētu tikt izvietoti uz master.
+
+# Izpildiet uz katra Master mezgla, ja tie ir vienādi
+kubectl taint node master1 node-role.kubernetes.io/control-plane-
+kubectl taint node master2 node-role.kubernetes.io/control-plane-
+kubectl taint node master3 node-role.kubernetes.io/control-plane-
+
+
+- name: Remove master taints
+  hosts: masters
+  become: yes
+  tasks:
+    - name: Remove control-plane taint
+      shell: kubectl taint node {{ inventory_hostname }} node-role.kubernetes.io/control-plane- --ignore-not-found
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+
+
+kubectl get ipaddresspools -n metallb-system
+
+
+ssh -i .\id_ed25519_vm -L 6443:192.168.1.199:6443 -N wolf@192.168.1.199
+
+helm list --all-namespaces
+kubectl get pods -n traefik

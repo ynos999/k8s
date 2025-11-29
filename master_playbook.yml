@@ -1,0 +1,8 @@
+- import_playbook: 2_keepalived.yml
+- import_playbook: 3_ca_import_latloto.yml
+- import_playbook: 4_k8s_ha.yml
+- import_playbook: 5_install_helm.yml
+- import_playbook: 6_python.yml
+
+# ansible-playbook -i hosts.ini 1_setup.yml
+# ansible-playbook -i hosts_wolf.ini master_playbook.yml

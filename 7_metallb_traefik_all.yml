@@ -5,20 +5,35 @@
   vars:
     metallb_namespace: metallb-system
     traefik_namespace: traefik
-    vip: 10.10.0.30                     # Jūsu HA VIP (KeepAlived)
-    metallb_ip_range: "10.10.0.30-10.10.0.30"
+    vip: 192.168.1.190 # Jūsu HA VIP (KeepAlived)
+    metallb_ip_range: "192.168.1.190-192.168.1.190"
     traefik_release: traefik
     tls_secret_name: wildcard-tls
-    demo_host: hello.iloto.lldev         # Demo host
-    cert_path: /root/certs               # Folder with wildcard cert/key
+    demo_host: hello.iloto.lldev # Demo host
+    cert_path: /root/certs # Mape ar wildcard sertifikātu un atslēgu (wildcard.crt un wildcard.key)
 
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
   tasks:
 
+    # ===============================
+    # RISINĀJUMS: HELM UN RESURSU ATTĪRĪŠANA PIRMS UZSTĀDĪŠANAS
+    # ===============================
+    # Tīrīšana ir svarīga pēc kļūmes, lai nodrošinātu jaunu instalāciju
+    - name: Clean up existing failed Traefik release (if any)
+      kubernetes.core.helm:
+        name: "{{ traefik_release }}"
+        release_namespace: "{{ traefik_namespace }}"
+        state: absent
+        # JAUNUMS: Pievienota 'purge: yes' un 'force: yes', lai nodrošinātu pilnīgu noņemšanu no 'pending-install' stāvokļa.
+        purge: yes
+        force: yes
+      ignore_errors: yes
+      run_once: true
+
     # -------------------------------
-    # Namespaces
+    # 1. Namespaces (Uzdevumi jāveic tikai vienreiz)
     # -------------------------------
     - name: Ensure MetalLB namespace exists
       kubernetes.core.k8s:
@@ -26,6 +41,7 @@
         kind: Namespace
         name: "{{ metallb_namespace }}"
         state: present
+      run_once: true
 
     - name: Ensure Traefik namespace exists
       kubernetes.core.k8s:
@@ -33,52 +49,79 @@
         kind: Namespace
         name: "{{ traefik_namespace }}"
         state: present
+      run_once: true
 
     # -------------------------------
-    # MetalLB
+    # 2. MetalLB Instalācija un Konfigurācija (Layer 2)
     # -------------------------------
     - name: Add MetalLB Helm repo
       kubernetes.core.helm_repository:
         name: metallb
         repo_url: https://metallb.github.io/metallb
         force_update: yes
+      run_once: true
 
-    # Install MetalLB chart
     - name: Install or upgrade MetalLB
       kubernetes.core.helm:
         name: metallb
         chart_ref: metallb/metallb
         release_namespace: "{{ metallb_namespace }}"
         create_namespace: false
-        values: {}   # bez configInline
+        values: {}
         wait: yes
+        wait_timeout: 300s 
+        force: yes 
+      run_once: true 
 
-    # Create MetalLB ConfigMap (Layer2)
-    - name: Configure MetalLB Layer2 IP pool
+    # UZLABOTS: Pauze ir palielināta, lai dotu laikam Webhook pakalpojumam inicializēties un API serverim uzticēties tā sertifikātam.
+    - name: Pause 60s for MetalLB Webhook service initialization
+      ansible.builtin.pause:
+        seconds: 60
+      run_once: true
+
+    # UZLABOTS: Konfigurē MetalLB IP Pool (Layer 2 režīms) - Pievienota retries loģika
+    - name: Configure MetalLB Layer2 IP pool and Advertisement
       kubernetes.core.k8s:
         state: present
-        definition:
-          apiVersion: v1
-          kind: ConfigMap
+        definition: |
+          apiVersion: metallb.io/v1beta1
+          kind: IPAddressPool
           metadata:
-            namespace: "{{ metallb_namespace }}"
-            name: config
-          data:
-            config: |
-              address-pools:
-              - name: layer2-pool
-                protocol: layer2
-                addresses:
-                - "{{ metallb_ip_range }}"
+            name: layer2-pool
+            namespace: {{ metallb_namespace }}
+          spec:
+            addresses:
+            - "{{ metallb_ip_range }}"
+      # RISINĀJUMS: Pievieno retries, lai pārvarētu īslaicīgu webhook kļūdu
+      retries: 5
+      delay: 5 
+      until: result is not failed 
+      register: result
+      run_once: true
+
+    - name: Create L2 Advertisement
+      kubernetes.core.k8s:
+        state: present
+        definition: |
+          apiVersion: metallb.io/v1beta1
+          kind: L2Advertisement
+          metadata:
+            name: layer2-advertisement
+            namespace: {{ metallb_namespace }}
+          spec:
+            ipAddressPools:
+            - layer2-pool
+      run_once: true
 
     # -------------------------------
-    # Traefik
+    # 3. Traefik Instalācija (LoadBalancer ar Shared IP)
     # -------------------------------
     - name: Add Traefik Helm repo
       kubernetes.core.helm_repository:
         name: traefik
         repo_url: https://helm.traefik.io/traefik
         force_update: yes
+      run_once: true
 
     - name: Install or upgrade Traefik
       kubernetes.core.helm:
@@ -92,21 +135,64 @@
             type: LoadBalancer
             loadBalancerIP: "{{ vip }}"
             annotations:
-              metallb.universe.tf/allow-shared-ip: "k8s-shared-vip"
+              # BRĪDINĀJUMS: deprecatedAnnotation, bet pagaidām atstājam
+              metallb.universe.tf/allow-shared-ip: "k&s-shared-vip"
           rbac:
             enabled: true
+          # UZLABOTS RISINĀJUMS: Izmantojam oficiālo Helm vērtību struktūru.
+          # securityContext ir Pod līmenis, kas darbojas kā root, lai atrisinātu bind: permission denied
+          # un CreateContainerConfigError kļūdas, kas var rasties, mēģinot piesaistīt sējumus.
+          podSecurityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            fsGroup: 0
+          
+          # ContainerSecurityContext nav nepieciešams, jo runAsUser: 0 jau piešķir root atļaujas
+          
+          additionalArguments:
+            - "--providers.kubernetesingress"
+            - "--entrypoints.web.address=:80"
+            - "--entrypoints.websecure.address=:443"
+            # UZLABOTS: Aktivizē Traefik Dashboard un izmanto unikālu iekšējo portu 9000, 
+            # lai izvairītos no konflikta ar noklusējuma :8080 entrypoint (traefik/metrics)
+            - "--api.dashboard=true"
+            - "--entrypoints.dashboard.address=:9000"
+          probes:
+            liveness:
+              enabled: false
+            readiness:
+              enabled: false
           ports:
             web:
-              redirectTo: websecure
+              port: 80
             websecure:
+              port: 443
               tls:
                 enabled: true
+            # UZLABOTS: Dashboard ports. Konteiners klausās uz 9000, Service būs pieejams uz 8080.
+            dashboard:
+              port: 8080 # Service (ārējais ports)
+              targetPort: 9000 # Pod (iekšējais ports)
+              # Mēs nevēlamies, lai 8080 ports tiktu rādīts kā LoadBalancer (tikai debug/admin)
+              expose: false
+              # Jāatver Service, lai varētu izmantot kubectl port-forward
+              service:
+                type: ClusterIP
         wait: yes
+        wait_timeout: 300s 
+        force: yes
+      run_once: true 
 
     # -------------------------------
-    # TLS Secret
+    # 4. TLS Secret ar Wildcard Sertifikātu
     # -------------------------------
-    - name: Ensure Traefik TLS secret exists
+    - name: Read wildcard cert and key files
+      ansible.builtin.set_fact:
+        wildcard_crt_b64: "{{ lookup('file', cert_path + '/wildcard.crt') | b64encode | string }}"
+        wildcard_key_b64: "{{ lookup('file', cert_path + '/wildcard.key') | b64encode | string }}"
+      run_once: true
+
+    - name: Create Traefik TLS secret (wildcard-tls)
       kubernetes.core.k8s:
         state: present
         definition:
@@ -117,11 +203,12 @@
             namespace: "{{ traefik_namespace }}"
           type: kubernetes.io/tls
           data:
-            tls.crt: "{{ lookup('file', cert_path + '/wildcard.crt') | b64encode | string }}"
-            tls.key: "{{ lookup('file', cert_path + '/wildcard.key') | b64encode | string }}"
+            tls.crt: "{{ wildcard_crt_b64 }}"
+            tls.key: "{{ wildcard_key_b64 }}"
+      run_once: true
 
     # -------------------------------
-    # Demo Deployment + Service
+    # 5. Demo Deployment + Service (Hello World - Nginx)
     # -------------------------------
     - name: Ensure demo deployment exists
       kubernetes.core.k8s:
@@ -144,11 +231,12 @@
               spec:
                 containers:
                   - name: demo
-                    image: nginx
+                    image: nginx 
                     ports:
                       - containerPort: 80
+      run_once: true
 
-    - name: Ensure demo service exists
+    - name: Ensure demo service exists (ClusterIP)
       kubernetes.core.k8s:
         state: present
         definition:
@@ -165,11 +253,12 @@
                 port: 80
                 targetPort: 80
             type: ClusterIP
+      run_once: true
 
     # -------------------------------
-    # Ingress with TLS + HTTP->HTTPS redirect
+    # 6. Ingress ar TLS un HTTP->HTTPS pāradresāciju
     # -------------------------------
-    - name: Ensure demo Ingress exists
+    - name: Ensure demo Ingress exists (hello.iloto.lldev)
       kubernetes.core.k8s:
         state: present
         definition:
@@ -179,8 +268,10 @@
             name: demo-ingress
             namespace: "{{ traefik_namespace }}"
             annotations:
+              # Šis piezīmes tagad nodrošina HTTP uz HTTPS pāradresāciju Traefik iekšpusē
               traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
               traefik.ingress.kubernetes.io/router.tls: "true"
+              # Pāradresācijas konfigurācija
               traefik.ingress.kubernetes.io/router.entrypoints.web.http.redirections.entryPoint.to: websecure
               traefik.ingress.kubernetes.io/router.entrypoints.web.http.redirections.entryPoint.scheme: https
           spec:
@@ -199,3 +290,31 @@
                           name: demo
                           port:
                             number: 80
+      run_once: true
+
+    # -------------------------------
+    # 7. Pārbaude (Pārliecināšanās, ka MetalLB piešķīra IP)
+    # -------------------------------
+    - name: Wait for Traefik LoadBalancer IP to be assigned by MetalLB
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Service
+        name: "{{ traefik_release }}"
+        namespace: "{{ traefik_namespace }}"
+      register: traefik_service_info
+      until: 
+        - traefik_service_info.resources is defined
+        - traefik_service_info.resources | length > 0
+        - traefik_service_info.resources[0].status.loadBalancer.ingress is defined
+        - traefik_service_info.resources[0].status.loadBalancer.ingress[0].ip is defined
+        - traefik_service_info.resources[0].status.loadBalancer.ingress[0].ip == vip
+      retries: 30 
+      delay: 5
+      when: metallb_ip_range is defined and metallb_ip_range is not none
+      run_once: true
+      
+    - name: Display assigned LoadBalancer IP
+      ansible.builtin.debug:
+        msg: "Traefik LoadBalancer Service IP: {{ traefik_service_info.resources[0].status.loadBalancer.ingress[0].ip }}"
+      when: traefik_service_info.resources is defined and traefik_service_info.resources | length > 0
+      run_once: true
