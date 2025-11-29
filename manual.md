@@ -542,3 +542,7 @@ sudo systemctl restart kubelet
 
 sudo systemctl restart kubelet
 kubectl get nodes -o wide
+
+sudo mkdir -p /etc/traefik/certs
+sudo cp /root/certs/wildcard.* /etc/traefik/certs/
+sudo chown -R $(whoami):$(whoami) /etc/traefik/certs

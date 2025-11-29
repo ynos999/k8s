@@ -12,6 +12,7 @@
     tls_secret_name: wildcard-tls
     demo_host: hello.iloto.lldev
     cert_path: /root/certs
+    # cert_path: /etc/traefik/certs
 
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
@@ -117,10 +118,11 @@
         force_update: yes
       run_once: true
 
-    - name: Read wildcard cert and key
+    - name: Read wildcard cert and key files
       ansible.builtin.set_fact:
         wildcard_crt_b64: "{{ lookup('file', cert_path + '/wildcard.crt') | b64encode | string }}"
         wildcard_key_b64: "{{ lookup('file', cert_path + '/wildcard.key') | b64encode | string }}"
+      become: yes
       run_once: true
 
     - name: Create Traefik TLS secret
