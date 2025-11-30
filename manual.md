@@ -492,6 +492,14 @@ kubectl taint node master1 node-role.kubernetes.io/control-plane-
 kubectl taint node master2 node-role.kubernetes.io/control-plane-
 kubectl taint node master3 node-role.kubernetes.io/control-plane-
 
+kubectl taint node master1 node-role.kubernetes.io/control-plane:NoSchedule
+kubectl taint node master2 node-role.kubernetes.io/control-plane:NoSchedule
+kubectl taint node master3 node-role.kubernetes.io/control-plane:NoSchedule
+
+kubectl describe node master1 | grep Taint
+kubectl describe node master2 | grep Taint
+kubectl describe node master3 | grep Taint
+
 
 - name: Remove master taints
   hosts: masters

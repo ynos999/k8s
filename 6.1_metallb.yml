@@ -1,23 +1,28 @@
-- name: MetalLB + Traefik + TLS Ingress
+---
+- name: Install MetalLB and Configure Layer2
   hosts: masters
-  become_user: root
   become: yes
   vars:
     metallb_namespace: metallb-system
-    traefik_namespace: traefik
     vip: 192.168.1.190
     metallb_ip_range: "192.168.1.190-192.168.1.190"
-    traefik_release: traefik
-    tls_secret_name: wildcard-tls
-    demo_host: hello.iloto.lldev
-    cert_path: /root/certs # Attālais ceļš uz sertifikātiem
+    metallb_version: "0.14.3" # Ieteicamā stabila versija 
 
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
   tasks:
+    # ===============================
+    # 0. Tīrīšana un Namespaces
+    # ===============================
+    - name: Clean up existing failed MetalLB release (if any)
+      kubernetes.core.helm:
+        name: metallb
+        release_namespace: "{{ metallb_namespace }}"
+        state: absent
+      ignore_errors: yes
+      run_once: true
 
-    # 1. Namespaces
     - name: Ensure MetalLB namespace exists
       kubernetes.core.k8s:
         api_version: v1
@@ -26,7 +31,9 @@
         state: present
       run_once: true
 
-    # 2. MetalLB instalācija
+    # ===============================
+    # 1. MetalLB Instalācija
+    # ===============================
     - name: Add MetalLB Helm repo
       kubernetes.core.helm_repository:
         name: metallb
@@ -34,16 +41,15 @@
         force_update: yes
       run_once: true
 
-    - name: Install or upgrade MetalLB
+    - name: Install or upgrade MetalLB (v{{ metallb_version }})
       kubernetes.core.helm:
         name: metallb
         chart_ref: metallb/metallb
         release_namespace: "{{ metallb_namespace }}"
         create_namespace: false
-        values:
-          controller:
-            webhook:
-              create: false
+        values: {}
+        # LABOTS: Nomainīts nepareizais 'version' parametrs uz pareizo 'chart_version'
+        chart_version: "{{ metallb_version }}" 
         wait: yes
         wait_timeout: 300s
         force: yes
@@ -59,9 +65,13 @@
             name: metallb-memberlist
             namespace: "{{ metallb_namespace }}"
           stringData:
+            # LABOTS: Izmantota standarta 'password' lookup funkcija, lai izvairītos no atkarības kļūdas
             secretkey: "{{ lookup('password', '/dev/null length=128 chars=ascii_letters,digits') }}"
       run_once: true
 
+    # ===============================
+    # 2. MetalLB Konfigurācija (IP Pool un L2 Advertisement)
+    # ===============================
     - name: Configure MetalLB Layer2 IP pool
       kubernetes.core.k8s:
         state: present
@@ -74,10 +84,6 @@
           spec:
             addresses:
             - "{{ metallb_ip_range }}"
-      retries: 10
-      delay: 5
-      register: result
-      until: result is not failed
       run_once: true
 
     - name: Create L2 Advertisement

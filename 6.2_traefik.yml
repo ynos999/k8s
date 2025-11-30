@@ -1,35 +1,43 @@
 ---
-- name: Traefik Ingress Controller Deployment
+- name: Traefik + TLS Ingress Deployment (Paļaujas uz iepriekš instalētu MetalLB)
   hosts: masters
-  become_user: root
   become: yes
   vars:
+    metallb_namespace: metallb-system
     traefik_namespace: traefik
-    vip: 192.168.1.190
+    vip: 192.168.1.190 # Jūsu HA VIP (MetalLB piešķirs šo adresi Traefik Service)
     traefik_release: traefik
     tls_secret_name: wildcard-tls
-    demo_host: hello.iloto.lldev # Pievienots, lai demo daļa darbotos
-    cert_path: /root/certs # Sertifikātu ceļš uz attālā mezgla
+    demo_host: hello.iloto.lldev # Demo host FQDN
+    
+    # JAUNS: Precīzi sertifikātu nosaukumi
+    cert_file_name: wildcard.iloto.lldev.crt
+    key_file_name: wildcard.iloto.lldev.key
+    
+    # Jūsu sertifikātu ceļš uz master mezgla.
+    cert_path: /root/certs 
+    # Lokālais sertifikātu ceļš.
+    local_cert_path: "loto" 
 
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
   tasks:
 
-    ## -------------------------------
-    ## 0. Tīrīšana (Novērš Helm bloķēšanu) 🧹
-    ## -------------------------------
-    - name: Ensure Traefik release is uninstalled if it exists (to clear locks)
+    # ===============================
+    # 0. Tīrīšana (Tikai Traefik)
+    # ===============================
+    - name: Clean up existing failed Traefik release (if any)
       kubernetes.core.helm:
-        name: traefik
+        name: "{{ traefik_release }}"
         release_namespace: "{{ traefik_namespace }}"
         state: absent
       ignore_errors: yes 
       run_once: true
 
-    ## -------------------------------
-    ## 1. Namespace
-    ## -------------------------------
+    # -------------------------------
+    # 1. Namespaces (Tikai Traefik nosaukumvietas esamības pārbaude)
+    # -------------------------------
     - name: Ensure Traefik namespace exists
       kubernetes.core.k8s:
         api_version: v1
@@ -37,40 +45,78 @@
         name: "{{ traefik_namespace }}"
         state: present
       run_once: true
-
-    ## -------------------------------
-    ## 2. Traefik Helm instalācija
-    ## -------------------------------
-    - name: Add Traefik Helm repo
-      kubernetes.core.helm_repository:
-        name: traefik
-        repo_url: https://helm.traefik.io/traefik
-        force_update: yes
-      run_once: true
-
-    ## 2a. Sertifikātu nolasīšana un Secret izveide
+      
+    # -------------------------------
+    # 2. Sertifikātu Failu Sagatavošana
+    # -------------------------------
     
-    - name: Slurp wildcard cert file from remote host
-      ansible.builtin.slurp:
-        src: "{{ cert_path }}/wildcard.crt"
-      register: wildcard_crt_slurp
+    # 2a. PĀRBAUDA LOKĀLO FAILU ESAMĪBU UZ ANSIBLE KONTROLLERA
+    - name: Stat check for local certificate and key files
+      ansible.builtin.stat:
+        path: "{{ local_cert_path }}/{{ item }}"
+      delegate_to: localhost
       run_once: true
-      become: yes
+      register: cert_files
+      loop:
+        - "{{ cert_file_name }}" # IZMANTO PRECĪZU NOSAUKUMU
+        - "{{ key_file_name }}"  # IZMANTO PRECĪZU NOSAUKUMU
+      become: no # IZSLĒDZAM SUDO, JO DARBOJAS UZ LOCALHOST
 
-    - name: Slurp wildcard key file from remote host
-      ansible.builtin.slurp:
-        src: "{{ cert_path }}/wildcard.key"
-      register: wildcard_key_slurp
+    - name: Fail if certificates are not found locally
+      ansible.builtin.fail:
+        msg: "FATAL: Required local file '{{ item.item }}' not found in path '{{ local_cert_path }}'. Place both '{{ cert_file_name }}' and '{{ key_file_name }}' in the 'loto' directory relative to where you run ansible-playbook."
+      when: not item.stat.exists
+      loop: "{{ cert_files.results }}"
+      loop_control:
+        label: "{{ item.item }}"
       run_once: true
-      become: yes
+      become: no # IZSLĒDZAM SUDO, JO DARBOJAS UZ LOCALHOST
 
-    - name: Set facts for base64 content
+    # 2b. ATTĀLĀ KOPIJA UZ MASTER MEZGLU
+    - name: Ensure remote cert path ({{ cert_path }}) exists on master node
+      ansible.builtin.file:
+        path: "{{ cert_path }}"
+        state: directory
+        mode: '0700'
+      run_once: true
+
+    - name: Copy wildcard certificate file to master node
+      ansible.builtin.copy:
+        src: "{{ local_cert_path }}/{{ cert_file_name }}" # IZMANTO PRECĪZU NOSAUKUMU
+        dest: "{{ cert_path }}/wildcard.crt" # Saglabā attāli kā vispārīgu nosaukumu Secret izveidei
+        mode: '0600'
+      run_once: true
+      delegate_to: master1
+      
+    - name: Copy wildcard key file to master node
+      ansible.builtin.copy:
+        src: "{{ local_cert_path }}/{{ key_file_name }}" # IZMANTO PRECĪZU NOSAUKUMU
+        dest: "{{ cert_path }}/wildcard.key" # Saglabā attāli kā vispārīgu nosaukumu Secret izveidei
+        mode: '0600'
+      run_once: true
+      delegate_to: master1
+      
+    # JAUNS UZDEVUMS: Ielādē sertifikātus no attālās atrašanās vietas, izmantojot slurp (Base64 kodēšana)
+    - name: Slurp (Base64 encode) remote certificate and key files
+      ansible.builtin.slurp:
+        src: "{{ cert_path }}/{{ item.dest_name }}"
+      register: remote_files
+      loop:
+        - { src_name: "{{ cert_file_name }}", dest_name: "wildcard.crt" }
+        - { src_name: "{{ key_file_name }}", dest_name: "wildcard.key" }
+      loop_control:
+        label: "{{ item.dest_name }}"
+      run_once: true
+      # Atstājam 'become: yes', jo mēs lasām no /root/certs/
+
+    - name: Set fact variables for certificate and key from slurp output
       ansible.builtin.set_fact:
-        wildcard_crt_b64: "{{ wildcard_crt_slurp.content }}"
-        wildcard_key_b64: "{{ wildcard_key_slurp.content }}"
+        # Saturs ir atrodams slurp atbildē 'content' un tas jau ir Base64 kodēts
+        wildcard_crt_b64: "{{ remote_files.results | selectattr('item.dest_name', 'equalto', 'wildcard.crt') | map(attribute='content') | first }}"
+        wildcard_key_b64: "{{ remote_files.results | selectattr('item.dest_name', 'equalto', 'wildcard.key') | map(attribute='content') | first }}"
       run_once: true
 
-    - name: Create Traefik TLS secret
+    - name: Create Traefik TLS secret (wildcard-tls)
       kubernetes.core.k8s:
         state: present
         definition:
@@ -81,98 +127,158 @@
             namespace: "{{ traefik_namespace }}"
           type: kubernetes.io/tls
           data:
+            # Saturs no slurp rezultāta tiek izmantots tieši (tas jau ir Base64)
             tls.crt: "{{ wildcard_crt_b64 }}"
             tls.key: "{{ wildcard_key_b64 }}"
       run_once: true
+      
+    # -------------------------------
+    # 2c. Pāradresācijas starpprogrammatūras izveide (HTTP->HTTPS)
+    # -------------------------------
+    - name: Create IngressRoute permanent redirect middleware (HTTP to HTTPS)
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: traefik.io/v1alpha1
+          kind: Middleware
+          metadata:
+            name: redirect-to-https
+            namespace: "{{ traefik_namespace }}"
+          spec:
+            # Traefik vidē starpprogrammatūra (Middleware) nodrošina HTTP uz HTTPS pāradresāciju.
+            # Tas aizstāj veco redirectTo portu konfigurāciju.
+            redirectScheme:
+              scheme: https
+              permanent: true
+      run_once: true
 
-    ## 2b. Traefik instalācija ar labotām vērtībām
+    # -------------------------------
+    # 2d. IngressClass Tīrīšana (Labo Helm Ownership kļūdu)
+    # -------------------------------
+    - name: Ensure conflicting Traefik IngressClass is deleted (cluster-scoped resource)
+      kubernetes.core.k8s:
+        api_version: networking.k8s.io/v1
+        kind: IngressClass
+        name: traefik
+        state: absent
+      ignore_errors: yes 
+      run_once: true
+
+    # -------------------------------
+    # 3. Traefik Instalācija (Ingress Controller)
+    # -------------------------------
+    - name: Add Traefik Helm repo
+      kubernetes.core.helm_repository:
+        name: traefik
+        repo_url: https://helm.traefik.io/traefik
+        force_update: yes
+      run_once: true
+
     - name: Install or upgrade Traefik
       kubernetes.core.helm:
         name: "{{ traefik_release }}"
         chart_ref: traefik/traefik
         release_namespace: "{{ traefik_namespace }}"
         create_namespace: false
+        update_repo_cache: yes
         values:
           service:
             type: LoadBalancer
             loadBalancerIP: "{{ vip }}"
             annotations:
-              metallb.universe.tf/allow-shared-ip: "k&s-shared-vip"
+              # MANDATORY: Anotācija, lai atļautu MetalLB dalīt IP adresi ar KeepAlived
+              metallb.universe.tf/allow-shared-ip: "k8s-shared-vip"
           rbac:
             enabled: true
-          # LABOJUMS: Atbilstība Non-Root drošības politikai
-          podSecurityContext: {}
-          containerSecurityContext: {}
-          additionalArguments:
-            - "--entrypoints.web.address=:80"
-            - "--entrypoints.websecure.address=:443"
-            - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
-            - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
-            # LABOJUMS: Korektā TLS sertifikātu ceļu sintakse (.0)
-            - "--entrypoints.websecure.http.tls.certificates.0.certFile=/certs/tls.crt"
-            - "--entrypoints.websecure.http.tls.certificates.0.keyFile=/certs/tls.key"
-          extraVolumes:
-            - name: traefik-certs
-              secret:
-                secretName: "{{ tls_secret_name }}"
-                defaultMode: 0400
-          extraVolumeMounts:
-            - name: traefik-certs
-              mountPath: /certs
-              readOnly: true
+          
+          # Konfigurē Traefik, lai apstrādātu Ingress resursus
+          providers:
+            kubernetesIngress:
+              ingressClass: traefik
+              publishedService:
+                enabled: true
+                ingressClassName: traefik
+            
+            # JAUNS: Iespējo Traefik, lai automātiski ielādētu starpprogrammatūru no K8s resursiem (nepieciešams Redirect)
+            kubernetesCRD:
+              enabled: true
+              ingressClass: traefik
+          
+          # Iestata TLS noklusējuma sertifikātu (pāradresācija tagad tiek apstrādāta ar Middleware)
           ports:
             web:
+              # *** LABOTS: Ārējam (Service) portam jābūt 80, lai atbilstu standarta HTTP ***
               port: 80
+              # Noņemam targetPort, jo tas tiks automātiski noteikts no additionalArguments (8080)
+              # Tomēr, lai pārliecinātos par Helm chart atbilstību, mēs skaidri definēsim targetPort šeit:
+              targetPort: 8080 # Iekšējais konteinera ports (virs 1024, lai novērstu atļaujas kļūdu)
+              expose: { default: true }
+              
             websecure:
+              # *** LABOTS: Ārējam (Service) portam jābūt 443, lai atbilstu standarta HTTPS ***
               port: 443
+              targetPort: 8443 # Iekšējais konteinera ports (virs 1024)
+              expose: { default: true }
               tls:
                 enabled: true
+                # Default certificate būtu tieši jūsu wildcard sertifikāts
+                defaultCert: "{{ traefik_namespace }}/{{ tls_secret_name }}" 
+          
+          # Papildu argumenti
+          additionalArguments:
+            - "--providers.kubernetesingress"
+            # JAUNS: Nepieciešams Traefik v2+ starpprogrammatūrai
+            - "--providers.kubernetescrd"
+            # MANDATORY: Skaidri definējam entry points, lai klausītos uz jaunajiem augstajiem portiem konteinerā
+            - "--entrypoints.web.address=:8080/tcp"
+            - "--entrypoints.websecure.address=:8443/tcp"
+            
         wait: yes
-        wait_timeout: 300s
+        wait_timeout: 600s
         force: yes
-      run_once: true
+      run_once: true 
 
     # -------------------------------
-    # 3. Demo Deployment
+    # 4. Demo Deployment (Nginx) + Service
     # -------------------------------
-    - name: Ensure demo deployment exists
+    - name: Ensure Nginx demo deployment exists
       kubernetes.core.k8s:
         state: present
         definition:
           apiVersion: apps/v1
           kind: Deployment
           metadata:
-            name: demo
+            name: demo-nginx
             namespace: "{{ traefik_namespace }}"
           spec:
             replicas: 1
             selector:
               matchLabels:
-                app: demo
+                app: demo-nginx
             template:
               metadata:
                 labels:
-                  app: demo
+                  app: demo-nginx
               spec:
                 containers:
-                  - name: demo
-                    image: nginx
+                  - name: nginx
+                    image: nginx:latest
                     ports:
                       - containerPort: 80
       run_once: true
 
-    - name: Ensure demo service exists
+    - name: Ensure demo service exists (ClusterIP)
       kubernetes.core.k8s:
         state: present
         definition:
           apiVersion: v1
           kind: Service
           metadata:
-            name: demo
+            name: demo-nginx-service
             namespace: "{{ traefik_namespace }}"
           spec:
             selector:
-              app: demo
+              app: demo-nginx
             ports:
               - protocol: TCP
                 port: 80
@@ -180,7 +286,10 @@
             type: ClusterIP
       run_once: true
 
-    - name: Ensure demo ingress exists
+    # -------------------------------
+    # 5. Ingress ar TLS
+    # -------------------------------
+    - name: Ensure demo Ingress exists (hello.iloto.lldev)
       kubernetes.core.k8s:
         state: present
         definition:
@@ -190,12 +299,16 @@
             name: demo-ingress
             namespace: "{{ traefik_namespace }}"
             annotations:
-              traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
-              traefik.ingress.kubernetes.io/router.tls: "true"
+              # MANDATORY: Pievienojam starpprogrammatūru, lai pāradresētu HTTP uz HTTPS
+              traefik.ingress.kubernetes.io/router.middlewares: "{{ traefik_namespace }}-redirect-to-https@kubernetescrd"
+              # TLS iestatīšanai
+              traefik.ingress.kubernetes.io/router.entrypoints: web, websecure # Tagad klausās gan 80, gan 443
           spec:
+            ingressClassName: traefik 
             tls:
               - hosts:
                   - "{{ demo_host }}"
+                # Izmanto jūsu izveidoto Secret ar wildcard sertifikātu
                 secretName: "{{ tls_secret_name }}"
             rules:
               - host: "{{ demo_host }}"
@@ -205,6 +318,33 @@
                       pathType: Prefix
                       backend:
                         service:
-                          name: demo
+                          name: demo-nginx-service # Izmainīts uz nginx servisa nosaukumu
                           port:
                             number: 80
+      run_once: true
+
+    # -------------------------------
+    # 6. Pārbaude (Pārliecināšanās, ka MetalLB piešķīra IP)
+    # -------------------------------
+    - name: Wait for Traefik LoadBalancer IP to be assigned by MetalLB ({{ vip }})
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Service
+        name: "{{ traefik_release }}"
+        namespace: "{{ traefik_namespace }}"
+      register: traefik_service_info
+      until: 
+        - traefik_service_info.resources is defined
+        - traefik_service_info.resources | length > 0
+        - traefik_service_info.resources[0].status.loadBalancer.ingress is defined
+        - traefik_service_info.resources[0].status.loadBalancer.ingress[0].ip is defined
+        - traefik_service_info.resources[0].status.loadBalancer.ingress[0].ip == vip
+      retries: 30 
+      delay: 5
+      run_once: true
+      
+    - name: Display assigned LoadBalancer IP
+      ansible.builtin.debug:
+        msg: "Traefik LoadBalancer Service IP: {{ traefik_service_info.resources[0].status.loadBalancer.ingress[0].ip }}"
+      when: traefik_service_info.resources is defined and traefik_service_info.resources | length > 0
+      run_once: true

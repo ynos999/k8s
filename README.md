@@ -22,7 +22,7 @@ sudo chmod 600 ~/.ssh/id_ed25519_vm
 # 1. ansible-playbook -i hosts.ini 1_setup.yml
 ---
 2 - 6.yml:
-# ansible-playbook -i hosts_wolf.ini master_playbook.yml
+# ansible-playbook -i hosts_wolf.ini 0_master_playbook.yml
 
 # 2. ansible-playbook -i hosts_wolf.ini 2_keepalived.yml
 ---
