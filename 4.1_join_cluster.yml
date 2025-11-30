@@ -5,9 +5,13 @@
   roles:
     - k8s-init-master
 
-# Pārējie master mezgli pievienojas kontrolplānam
+# Pārējie master mezgli pievienojas kontrolplānam (ar pauzi 60s)
 - hosts: masters:!master1
   become: yes
+  pre_tasks:
+    - name: Gaidīt 60 sekundes pirms pievienošanās CP
+      pause:
+        seconds: 60
   roles:
     - k8s-join-controlplane
 

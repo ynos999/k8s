@@ -484,9 +484,7 @@ https://hostman.com/tutorials/how-to-install-a-kubernetes-cluster-on-ubuntu/
 # sudo kubeadm init phase upload-certs --upload-certs
 
 Taint node-role.kubernetes.io/control-plane tiek noņemts no node.
-
 Tas ļauj, lai pods varētu tikt izvietots uz master mezgla, kas normāli tiek bloķēts.
-
 Ja tev nav worker mezgli, tad šis ir obligāts solis, lai metallb vai citi pods varētu tikt izvietoti uz master.
 
 # Izpildiet uz katra Master mezgla, ja tie ir vienādi
@@ -504,17 +502,23 @@ kubectl taint node master3 node-role.kubernetes.io/control-plane-
       environment:
         KUBECONFIG: /etc/kubernetes/admin.conf
 
+ssh -i .\id_ed25519_vm -L 6443:192.168.1.199:6443 -N wolf@192.168.1.199
 
 kubectl get ipaddresspools -n metallb-system
+kubectl get pods -n metallb-system
 
-
-ssh -i .\id_ed25519_vm -L 6443:192.168.1.199:6443 -N wolf@192.168.1.199
 
 helm list --all-namespaces
 kubectl get pods -n traefik
 kubectl describe pod traefik-5db9bb6877-bwxgh -n traefik
 kubectl logs traefik-5db9bb6877-bwxgh -n traefik
+helm uninstall traefik -n traefik
+kubectl delete deployment traefik -n traefik
+kubectl delete service traefik -n traefik
+kubectl delete secret wildcard-tls -n traefik
 
+kubectl get secret wildcard-tls -n traefik -o jsonpath='{.data.tls\.crt}' | base64 -d
+kubectl get secret wildcard-tls -n traefik -o jsonpath='{.data.tls\.key}' | base64 -d
 
 kubectl create secret generic metallb-memberlist \
   --namespace metallb-system \
@@ -546,3 +550,15 @@ kubectl get nodes -o wide
 sudo mkdir -p /etc/traefik/certs
 sudo cp /root/certs/wildcard.* /etc/traefik/certs/
 sudo chown -R $(whoami):$(whoami) /etc/traefik/certs
+
+
+----
+Reset kubeadm:
+sudo kubeadm reset -f
+sudo systemctl stop kubelet
+sudo pkill kubelet
+sudo lsof -i :6443
+sudo lsof -i :2379
+sudo rm -rf /var/lib/etcd/*
+
+

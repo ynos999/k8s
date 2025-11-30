@@ -1,35 +1,35 @@
 ---
-- name: MetalLB + Traefik + TLS Ingress
+- name: Traefik Ingress Controller Deployment
   hosts: masters
   become_user: root
   become: yes
   vars:
-    metallb_namespace: metallb-system
     traefik_namespace: traefik
     vip: 192.168.1.190
-    metallb_ip_range: "192.168.1.190-192.168.1.190"
     traefik_release: traefik
     tls_secret_name: wildcard-tls
-    demo_host: hello.iloto.lldev
-    cert_path: /root/certs
-    # cert_path: /etc/traefik/certs
+    demo_host: hello.iloto.lldev # Pievienots, lai demo daļa darbotos
+    cert_path: /root/certs # Sertifikātu ceļš uz attālā mezgla
 
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
   tasks:
 
-    # -------------------------------
-    # 1. Namespaces
-    # -------------------------------
-    - name: Ensure MetalLB namespace exists
-      kubernetes.core.k8s:
-        api_version: v1
-        kind: Namespace
-        name: "{{ metallb_namespace }}"
-        state: present
+    ## -------------------------------
+    ## 0. Tīrīšana (Novērš Helm bloķēšanu) 🧹
+    ## -------------------------------
+    - name: Ensure Traefik release is uninstalled if it exists (to clear locks)
+      kubernetes.core.helm:
+        name: traefik
+        release_namespace: "{{ traefik_namespace }}"
+        state: absent
+      ignore_errors: yes 
       run_once: true
 
+    ## -------------------------------
+    ## 1. Namespace
+    ## -------------------------------
     - name: Ensure Traefik namespace exists
       kubernetes.core.k8s:
         api_version: v1
@@ -38,79 +38,9 @@
         state: present
       run_once: true
 
-    # -------------------------------
-    # 2. MetalLB instalācija
-    # -------------------------------
-    - name: Add MetalLB Helm repo
-      kubernetes.core.helm_repository:
-        name: metallb
-        repo_url: https://metallb.github.io/metallb
-        force_update: yes
-      run_once: true
-
-    - name: Install or upgrade MetalLB
-      kubernetes.core.helm:
-        name: metallb
-        chart_ref: metallb/metallb
-        release_namespace: "{{ metallb_namespace }}"
-        create_namespace: false
-        values:
-          controller:
-            webhook:
-              create: false
-        wait: yes
-        wait_timeout: 300s
-        force: yes
-      run_once: true
-
-    - name: Ensure metallb-memberlist secret exists
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: metallb-memberlist
-            namespace: "{{ metallb_namespace }}"
-          stringData:
-            secretkey: "{{ lookup('password', '/dev/null length=128 chars=ascii_letters,digits') }}"
-      run_once: true
-
-    - name: Configure MetalLB Layer2 IP pool
-      kubernetes.core.k8s:
-        state: present
-        definition: |
-          apiVersion: metallb.io/v1beta1
-          kind: IPAddressPool
-          metadata:
-            name: layer2-pool
-            namespace: "{{ metallb_namespace }}"
-          spec:
-            addresses:
-            - "{{ metallb_ip_range }}"
-      retries: 10
-      delay: 5
-      register: result
-      until: result is not failed
-      run_once: true
-
-    - name: Create L2 Advertisement
-      kubernetes.core.k8s:
-        state: present
-        definition: |
-          apiVersion: metallb.io/v1beta1
-          kind: L2Advertisement
-          metadata:
-            name: layer2-advertisement
-            namespace: {{ metallb_namespace }}
-          spec:
-            ipAddressPools:
-            - layer2-pool
-      run_once: true
-
-    # -------------------------------
-    # 3. Traefik Helm instalācija
-    # -------------------------------
+    ## -------------------------------
+    ## 2. Traefik Helm instalācija
+    ## -------------------------------
     - name: Add Traefik Helm repo
       kubernetes.core.helm_repository:
         name: traefik
@@ -118,11 +48,26 @@
         force_update: yes
       run_once: true
 
-    - name: Read wildcard cert and key files
-      ansible.builtin.set_fact:
-        wildcard_crt_b64: "{{ lookup('file', cert_path + '/wildcard.crt') | b64encode | string }}"
-        wildcard_key_b64: "{{ lookup('file', cert_path + '/wildcard.key') | b64encode | string }}"
+    ## 2a. Sertifikātu nolasīšana un Secret izveide
+    
+    - name: Slurp wildcard cert file from remote host
+      ansible.builtin.slurp:
+        src: "{{ cert_path }}/wildcard.crt"
+      register: wildcard_crt_slurp
+      run_once: true
       become: yes
+
+    - name: Slurp wildcard key file from remote host
+      ansible.builtin.slurp:
+        src: "{{ cert_path }}/wildcard.key"
+      register: wildcard_key_slurp
+      run_once: true
+      become: yes
+
+    - name: Set facts for base64 content
+      ansible.builtin.set_fact:
+        wildcard_crt_b64: "{{ wildcard_crt_slurp.content }}"
+        wildcard_key_b64: "{{ wildcard_key_slurp.content }}"
       run_once: true
 
     - name: Create Traefik TLS secret
@@ -140,6 +85,7 @@
             tls.key: "{{ wildcard_key_b64 }}"
       run_once: true
 
+    ## 2b. Traefik instalācija ar labotām vērtībām
     - name: Install or upgrade Traefik
       kubernetes.core.helm:
         name: "{{ traefik_release }}"
@@ -154,22 +100,22 @@
               metallb.universe.tf/allow-shared-ip: "k&s-shared-vip"
           rbac:
             enabled: true
-          podSecurityContext:
-            runAsUser: 0
-            runAsGroup: 0
-            fsGroup: 0
+          # LABOJUMS: Atbilstība Non-Root drošības politikai
+          podSecurityContext: {}
           containerSecurityContext: {}
           additionalArguments:
             - "--entrypoints.web.address=:80"
             - "--entrypoints.websecure.address=:443"
             - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
             - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
-            - "--entrypoints.websecure.http.tls.certificates[0].certFile=/certs/tls.crt"
-            - "--entrypoints.websecure.http.tls.certificates[0].keyFile=/certs/tls.key"
+            # LABOJUMS: Korektā TLS sertifikātu ceļu sintakse (.0)
+            - "--entrypoints.websecure.http.tls.certificates.0.certFile=/certs/tls.crt"
+            - "--entrypoints.websecure.http.tls.certificates.0.keyFile=/certs/tls.key"
           extraVolumes:
             - name: traefik-certs
               secret:
                 secretName: "{{ tls_secret_name }}"
+                defaultMode: 0400
           extraVolumeMounts:
             - name: traefik-certs
               mountPath: /certs
@@ -181,19 +127,13 @@
               port: 443
               tls:
                 enabled: true
-            dashboard:
-              port: 8080
-              targetPort: 9000
-              expose: false
-              service:
-                type: ClusterIP
         wait: yes
         wait_timeout: 300s
         force: yes
       run_once: true
 
     # -------------------------------
-    # 4. Demo Deployment
+    # 3. Demo Deployment
     # -------------------------------
     - name: Ensure demo deployment exists
       kubernetes.core.k8s:
