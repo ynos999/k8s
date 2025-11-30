@@ -135,22 +135,6 @@
     # -------------------------------
     # 2c. Pāradresācijas starpprogrammatūras izveide (HTTP->HTTPS)
     # -------------------------------
-    - name: Create IngressRoute permanent redirect middleware (HTTP to HTTPS)
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: traefik.io/v1alpha1
-          kind: Middleware
-          metadata:
-            name: redirect-to-https
-            namespace: "{{ traefik_namespace }}"
-          spec:
-            # Traefik vidē starpprogrammatūra (Middleware) nodrošina HTTP uz HTTPS pāradresāciju.
-            # Tas aizstāj veco redirectTo portu konfigurāciju.
-            redirectScheme:
-              scheme: https
-              permanent: true
-      run_once: true
 
     # -------------------------------
     # 2d. IngressClass Tīrīšana (Labo Helm Ownership kļūdu)
@@ -207,17 +191,17 @@
           # Iestata TLS noklusējuma sertifikātu (pāradresācija tagad tiek apstrādāta ar Middleware)
           ports:
             web:
-              # *** LABOTS: Ārējam (Service) portam jābūt 80, lai atbilstu standarta HTTP ***
+              # Ārējais (Service) ports joprojām ir 80
               port: 80
-              # Noņemam targetPort, jo tas tiks automātiski noteikts no additionalArguments (8080)
-              # Tomēr, lai pārliecinātos par Helm chart atbilstību, mēs skaidri definēsim targetPort šeit:
-              targetPort: 8080 # Iekšējais konteinera ports (virs 1024, lai novērstu atļaujas kļūdu)
+              # *** LABOTS: Mainām iekšējo targetPort uz 9080 ***
+              targetPort: 9080 
               expose: { default: true }
               
             websecure:
-              # *** LABOTS: Ārējam (Service) portam jābūt 443, lai atbilstu standarta HTTPS ***
+              # Ārējais (Service) ports joprojām ir 443
               port: 443
-              targetPort: 8443 # Iekšējais konteinera ports (virs 1024)
+              # *** LABOTS: Mainām iekšējo targetPort uz 9443 ***
+              targetPort: 9443
               expose: { default: true }
               tls:
                 enabled: true
@@ -229,14 +213,40 @@
             - "--providers.kubernetesingress"
             # JAUNS: Nepieciešams Traefik v2+ starpprogrammatūrai
             - "--providers.kubernetescrd"
-            # MANDATORY: Skaidri definējam entry points, lai klausītos uz jaunajiem augstajiem portiem konteinerā
-            - "--entrypoints.web.address=:8080/tcp"
-            - "--entrypoints.websecure.address=:8443/tcp"
+            # *** LABOTS: Skaidri definējam entry points, lai klausītos uz jaunajiem portiem konteinerā (9080, 9443) ***
+            - "--entrypoints.web.address=:9080/tcp"
+            - "--entrypoints.websecure.address=:9443/tcp"
             
-        wait: yes
+        wait: no # *** LABOTS: NOŅEMTS WAIT, LAI ANSIBLE NEBLOĶĒTOS, KAMĒR METALBLB PIEŠĶIR IP ***
         wait_timeout: 600s
         force: yes
       run_once: true 
+
+    # *** JAUNS UZDEVUMS: Pauze, lai ļautu API serverim reģistrēt Traefik CRD ***
+    - name: Pause 10 seconds to wait for Traefik CRD registration
+      ansible.builtin.pause:
+        seconds: 10
+      run_once: true
+
+    # -------------------------------
+    # 2c. Pāradresācijas starpprogrammatūras izveide (HTTP->HTTPS)
+    # -------------------------------
+    - name: Create IngressRoute permanent redirect middleware (HTTP to HTTPS)
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: traefik.io/v1alpha1
+          kind: Middleware
+          metadata:
+            name: redirect-to-https
+            namespace: "{{ traefik_namespace }}"
+          spec:
+            # Traefik vidē starpprogrammatūra (Middleware) nodrošina HTTP uz HTTPS pāradresāciju.
+            # Tas aizstāj veco redirectTo portu konfigurāciju.
+            redirectScheme:
+              scheme: https
+              permanent: true
+      run_once: true
 
     # -------------------------------
     # 4. Demo Deployment (Nginx) + Service

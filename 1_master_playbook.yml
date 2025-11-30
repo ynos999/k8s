@@ -4,6 +4,7 @@
 - import_playbook: 4.1_join_cluster.yml
 - import_playbook: 5_install_helm.yml
 - import_playbook: 6_python.yml
+- import_playbook: 6.1_metallb.yml
 
 # ansible-playbook -i hosts.ini 1_setup.yml
 # ansible-playbook -i hosts_wolf.ini master_playbook.yml
