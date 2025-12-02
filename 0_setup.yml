@@ -25,11 +25,11 @@
       ansible.builtin.blockinfile:
         path: /etc/hosts
         block: |
-          192.168.1.199 master1
-          192.168.1.198 master2
-          192.168.1.197 master3
-          192.168.1.196 worker1
-          192.168.1.195 worker2
+          192.168.4.197 master1
+          192.168.4.196 master2
+          192.168.4.195 master3
+          192.168.4.194 worker1
+          192.168.4.193 worker2
 
     - name: Copy SSH key for user wolf (authorized_keys like ssh-copy-id)
       ansible.posix.authorized_key:

@@ -4,8 +4,8 @@
   become: yes
 
   vars:
-    vip: "192.168.1.190/32"
-    interface: "enp0s3"
+    vip: "192.168.4.190/32"
+    interface: "enp0s5"
     auth_pass: "K8sHApass"
 
     keepalived_nodes:

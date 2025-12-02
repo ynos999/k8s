@@ -82,7 +82,7 @@
         create_namespace: false
         state: present
         values_files:
-          - "{{ playbook_dir }}/files/traefik-values.yaml" # Fails ar 192.168.1.190, shared-ip un tls config
+          - "{{ playbook_dir }}/files/traefik-values.yaml" # Fails ar 192.168.4.190, shared-ip un tls config
 
 # --------------------------------------------------------------------------------------
 

@@ -284,6 +284,12 @@ sudo systemctl restart kubelet
 # Pēc kubeadm init un konfigurācijas iestatīšanas uz Master 1 weave
 kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s.yaml
 
+Dzēst weave, arm64 nestrādā:
+kubectl delete -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s.yaml
+sudo rm -rf /etc/cni/net.d/10-weave.conflist
+sudo rm -rf /etc/cni/net.d/weave-kube*
+sudo systemctl restart kubelet
+
 ---
 6. Pievienot pārējās nodes un pārliecināties, ka viss strādā.
 kubectl get nodes

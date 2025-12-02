@@ -1,5 +1,5 @@
 - import_playbook: 2_keepalived.yml
-- import_playbook: 3_ca_import_latloto.yml
+# - import_playbook: 3_ca_import_latloto.yml
 - import_playbook: 4_k8s_ha.yml
 - import_playbook: 4.1_join_cluster.yml
 - import_playbook: 5_install_helm.yml

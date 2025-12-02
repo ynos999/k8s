@@ -1,19 +1,19 @@
 ---
-# Pārbaudīt, vai cluster jau inicializēts
-- name: Pārbaudīt, vai /etc/kubernetes/admin.conf eksistē
+# 1. Check if cluster already exists
+- name: Check if /etc/kubernetes/admin.conf exists
   stat:
     path: /etc/kubernetes/admin.conf
   register: kubeadm_admin_conf
 
-# Izveidot kubeadm config
-- name: Izveidot kubeadm config
+# 2. Create kubeadm config (only for first init)
+- name: Create kubeadm config
   copy:
     dest: /root/kubeadm-config.yaml
     content: |
       apiVersion: kubeadm.k8s.io/v1beta4
       kind: ClusterConfiguration
       kubernetesVersion: stable-1.33
-      controlPlaneEndpoint: "192.168.1.190:6443"
+      controlPlaneEndpoint: "192.168.4.190:6443"
       networking:
         podSubnet: "172.16.0.0/16"
         serviceSubnet: "172.17.0.0/12"
@@ -24,48 +24,56 @@
       nodeRegistration:
         name: "master1"
         criSocket: "unix:///var/run/crio/crio.sock"
+  when: not kubeadm_admin_conf.stat.exists
 
-# Inicializēt cluster tikai, ja nav
-- name: kubeadm init uz master1
+# 3. Run kubeadm init (first master only)
+- name: kubeadm init on master1
   command: kubeadm init --config=/root/kubeadm-config.yaml --upload-certs
   register: init_out
   args:
     creates: /etc/kubernetes/admin.conf
   when: not kubeadm_admin_conf.stat.exists
 
-- debug:
-    var: init_out.stdout_lines
+# 4. CERT KEY generation logic
+- name: Generate certificate key (new cluster)
+  command: kubeadm certs certificate-key
+  register: cert_key
   when: not kubeadm_admin_conf.stat.exists
 
-# Ja cluster jau ir, iegūst certificate key un join komandu
-- name: Iegūt certificate key
+- name: Get certificate key (existing cluster)
   shell: kubeadm init phase upload-certs --upload-certs | tail -n1
   register: cert_key
   when: kubeadm_admin_conf.stat.exists
 
-- name: Iegūt MASTER join komandu
+# 5. Join command logic
+- name: Extract MASTER join command from kubeadm init output
+  set_fact:
+    join_cmd_master: "{{ init_out.stdout | regex_search('kubeadm join[\\s\\S]+?--control-plane[^\n]+') }}"
+  when: not kubeadm_admin_conf.stat.exists
+
+- name: Generate MASTER join command (existing cluster)
   command: kubeadm token create --print-join-command --certificate-key {{ cert_key.stdout }}
   register: join_out
   when: kubeadm_admin_conf.stat.exists
 
-# Set facts MASTER un WORKER join komandas
-- set_fact:
-    join_cmd_master: >-
-      {{
-        (init_out.stdout | regex_search('kubeadm join[^\\n]+--control-plane[^\\n]+'))
-        if not kubeadm_admin_conf.stat.exists
-        else join_out.stdout
-      }}
-- set_fact:
+- name: Set MASTER join command fact (existing cluster)
+  set_fact:
+    join_cmd_master: "{{ join_out.stdout }}"
+  when: kubeadm_admin_conf.stat.exists
+
+# 6. Generate worker join command
+- name: Generate worker join command
+  set_fact:
     join_cmd_worker: "{{ join_cmd_master | regex_replace('--control-plane.*', '') }}"
 
+# 7. Debug output
 - debug:
     msg:
       - "MASTER JOIN: {{ join_cmd_master }}"
       - "WORKER JOIN: {{ join_cmd_worker }}"
 
-# Izveidot .kube direktoriju wolf lietotājam
-- name: Izveidot ~/.kube direktoriju
+# 8. kubeconfig for wolf user
+- name: Create ~/.kube
   become: yes
   file:
     path: /home/wolf/.kube
@@ -74,16 +82,16 @@
     group: wolf
     mode: '0755'
 
-# Kopēt kubeconfig uz wolf profilu
-- name: Kopēt kubeconfig uz wolf profilu
+- name: Copy kubeconfig
   become: yes
   command: cp /etc/kubernetes/admin.conf /home/wolf/.kube/config
+  when: kubeadm_admin_conf.stat.exists
 
-# Labot faila īpašnieku un tiesības
-- name: Labot faila īpašnieku un tiesības
+- name: Fix kubeconfig permissions
   become: yes
   file:
     path: /home/wolf/.kube/config
     owner: wolf
     group: wolf
     mode: '0600'
+  when: kubeadm_admin_conf.stat.exists
