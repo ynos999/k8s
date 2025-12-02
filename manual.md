@@ -570,3 +570,241 @@ sudo lsof -i :2379
 sudo rm -rf /var/lib/etcd/*
 
 
+----------------------------
+Tā ir diezgan kompleksa uzdevumu virkne, kas aptver vairākas svarīgas Kubernetes komponentes. Es paskaidrošu katru soli, koncentrējoties uz nepieciešamajām komandām un konfigurācijām.
+
+## 1\. MetalLB uzstādīšana (Layer 2 režīms)
+
+MetalLB nodrošina *LoadBalancer* servisu implementāciju, kas nepieciešama jūsu klasterī, jo tas nav izvietots publiskā mākonī.
+
+### Uzstādīšana
+
+MetalLB uzstāda, izmantojot **Helm** vai **Manifestus**. Izmantosim manifestus, jo tā ir oficiālā metode, kas ļauj viegli norādīt nepieciešamo vārda telpu.
+
+```bash
+# 1. Izveidot metallb-system vārda telpu, ja tā vēl nav
+kubectl create namespace metallb-system
+
+# 2. Uzstādīt MetalLB ar manifestu
+# Pārbaudiet jaunāko versiju MetalLB dokumentācijā. Šis ir piemērs.
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb.yaml
+```
+
+### Konfigurācija (Layer 2 un Adreses)
+
+Pēc uzstādīšanas ir jādefinē **IP Adrešu Baseins** un **Layer 2 konfigurācija**.
+
+Izveidojiet failu ar nosaukumu `metallb-config.yaml`:
+
+```yaml
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: traefik-vip-pool
+  namespace: metallb-system
+spec:
+  # Šeit norādam TIKAI to IP adresi, ko vēlamies izmantot (192.168.1.190)
+  addresses:
+  - 192.168.1.190/32 
+
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: traefik-l2-advertisement
+  namespace: metallb-system
+spec:
+  # Norādam, ka reklamēsim IP no iepriekš definētā baseina
+  ipAddressPools:
+  - traefik-vip-pool
+  # Var pievienot papildus iestatījumus, ja nepieciešams, 
+  # bet šis ir pietiekams Layer 2 pamatrežīmam
+```
+
+```bash
+# Pielietot konfigurāciju
+kubectl apply -f metallb-config.yaml
+```
+
+-----
+
+## 2\. Traefik kā Ingress Controller un LoadBalancer Serviss
+
+Izmantosim oficiālo Helm chart.
+
+### Sertifikātu sagatavošana
+
+Pirms Traefik uzstādīšanas ir jāielādē jūsu sertifikāts. Jums ir sertifikāts (`*.iloto.lldev`) un atslēga, kas atrodas `/root/certs` mapē uz `master-node-01`.
+
+1.  **Izveidojiet Kubernetes Secret:**
+    Pieņemot, ka jūsu faili ir `cert.pem` (wildcard sertifikāts) un `key.pem` (privātā atslēga) mapē `/root/certs` uz `master-node-01`.
+
+    ```bash
+    # Pārliecinieties, ka esat master-node-01
+    cd /root/certs
+    # Izveidot secret traefik vārda telpā. Ja tā vēl nav, tā tiks izveidota ar Helm
+    kubectl create secret tls iloto-wildcard-tls --cert=cert.pem --key=key.pem -n traefik
+    ```
+
+### Traefik uzstādīšana ar Helm
+
+Izveidosim `values.yaml` failu Traefik konfigurācijai.
+
+```yaml
+# traefik-values.yaml
+# --- Traefik Service konfigurācija (LoadBalancer ar specifisku IP) ---
+service:
+  enabled: true
+  type: LoadBalancer
+  annotations:
+    # MetalLB anotācija, lai atļautu dalīt šo IP ar KeepAlived VIP (192.168.1.190)
+    metallb.universe.tf/allow-shared-ip: "k8s-shared-vip" 
+  spec:
+    # MetalLB piešķirs tieši šo IP adresi (jābūt IPAddressPool)
+    loadBalancerIP: 192.168.1.190 
+
+# --- Traefik Konfigurācija (Ingress Controller) ---
+providers:
+  kubernetesIngress:
+    enabled: true
+
+# --- Traefik HTTPS/HTTP konfigurācija ---
+# Ieslēgt TLS Listener (443 ports)
+tls:
+  enabled: true
+
+# Definēt Globālo/Default TLS Konfigurāciju
+globalArguments:
+  - --entrypoints.web.address=:80
+  - --entrypoints.websecure.address=:443
+  
+  # Iestatīt Default Sertifikātu uz jūsu wildcard sertifikātu
+  - --entrypoints.websecure.tls.defaultcertificate.secretname=iloto-wildcard-tls
+  - --entrypoints.websecure.tls.defaultcertificate.namespace=traefik
+
+# HTTP uz HTTPS novirzīšana (Entrypoint 'web' uz 'websecure')
+additionalArguments:
+  - --entrypoints.web.http.redirections.entrypoint.to=:443
+  - --entrypoints.web.http.redirections.entrypoint.scheme=https
+  - --entrypoints.web.http.redirections.entrypoint.permanent=true
+
+# --- Pārējie iestatījumi ---
+ports:
+  web:
+    redirectTo: websecure # Tiek pārdefinēts ar additionalArguments
+  websecure:
+    tls:
+      enabled: true
+
+# Izmantojiet tikai Traefik vārda telpu
+namespace: traefik
+```
+
+```bash
+# Pievienot Traefik Helm repozitoriju
+helm repo add traefik https://helm.traefik.io/traefik
+helm repo update
+
+# Uzstādīt Traefik, izveidojot "traefik" vārda telpu un izmantojot konfigurāciju
+helm install traefik traefik/traefik -n traefik --create-namespace -f traefik-values.yaml
+```
+
+Pārbaudiet, vai Traefik LoadBalancer serviss saņēma IP:
+
+```bash
+kubectl get svc traefik -n traefik
+# Jāredz EXTERNAL-IP kā 192.168.1.190
+```
+
+-----
+
+## 3\. "Hello World" Aplikācijas Uzstādīšana
+
+Izmantosim **bitnami/nginx** kā piemēru.
+
+```bash
+# Pievienot bitnami repozitoriju
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo update
+
+# Uzstādīt Nginx kā "hello-app"
+helm install hello-app bitnami/nginx -n default --set ingress.enabled=false
+```
+
+-----
+
+## 4\. Ingress Resursa Izveidošana
+
+Tagad ir jāizveido *Ingress* resurss, kas:
+
+1.  Novirza trafiku no `http://hello.iloto.lldev` uz `https://hello.iloto.lldev`.
+2.  Izmanto iepriekš sagatavoto `iloto-wildcard-tls` sertifikātu.
+
+Izveidojiet failu `hello-ingress.yaml`:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-ingress
+  annotations:
+    # 1. Traefik anotācija, lai veiktu HTTP uz HTTPS novirzīšanu
+    traefik.ingress.kubernetes.io/router.entrypoints: web, websecure
+    traefik.ingress.kubernetes.io/router.middlewares: default-redirect-to-https@kubernetescrd
+spec:
+  # 2. TLS sertifikāta definīcija
+  tls:
+  - hosts:
+    - hello.iloto.lldev
+    secretName: iloto-wildcard-tls # Nosaukums jūsu secret, kas atrodas "traefik" namespace!
+
+  # 3. Ingress noteikumi
+  rules:
+  - host: hello.iloto.lldev
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: hello-app # Tas būs bitnami/nginx servisa nosaukums (pēc noklusējuma tāds)
+            port:
+              number: 80 # Nginx ports
+```
+
+> **Svarīga Piezīme par TLS Secret:** Ingress resurss atsaucas uz **Service** vārda telpu (šajā gadījumā `default`), bet Traefik kā Ingress Controller meklē **TLS Secret** savā vārda telpā (`traefik`), ja nav norādīts citādi (dažreiz tas jānorāda ar papildus anotāciju, bet Traefik noklusējuma konfigurācija to parasti atbalsta).
+
+Papildus ir jāizveido **Traefik Middleware**, kas veiks novirzīšanu, jo tas ir jādara ar Traefik IngressRoute/Middleware resursiem, nevis tikai ar Ingress anotācijām.
+
+Izveidojiet failu `redirect-middleware.yaml` Traefik vārda telpā:
+
+```yaml
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-to-https
+  namespace: default # Middleware jāatrodas tajā pašā vārda telpā, kur Ingress!
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+```
+
+```bash
+# Pielietot Middleware
+kubectl apply -f redirect-middleware.yaml
+
+# Pielietot Ingress
+kubectl apply -f hello-ingress.yaml
+
+# Pārbaudīt, vai Ingress resurss ir izveidots
+kubectl get ingress hello-ingress -n default
+```
+
+### Pārbaude
+
+1.  Pārbaudiet, vai jūsu vietējais dators spēj atrisināt `hello.iloto.lldev` uz **192.168.1.190** (jāpievieno hosts failā, ja nav DNS).
+2.  Atveriet pārlūkprogrammā: `http://hello.iloto.lldev`. Tam automātiski jānovirza uz `https://hello.iloto.lldev`.
+3.  Pārlūkprogrammai jāparāda "Hello World" aplikācijas saturs ar derīgu TLS savienojumu, ko parakstījis jūsu CA.
+
+Vai vēlaties, lai es detalizētāk paskaidrotu kādu no šiem soļiem, piemēram, **Helm vērtību** nozīmi Traefik konfigurācijā?
