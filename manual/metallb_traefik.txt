@@ -72,6 +72,15 @@ Pirms Traefik uzstādīšanas ir jāielādē jūsu sertifikāts. Jums ir sertifi
     # Izveidot secret traefik vārda telpā. Ja tā vēl nav, tā tiks izveidota ar Helm
     kubectl create secret tls iloto-wildcard-tls --cert=cert.pem --key=key.pem -n traefik
     ```
+  # Apvienot sertifikātus: Servera > Intermediate 2 > Intermediate 1
+
+cat wildcard.iloto.lldev.crt latloto-intermediate-server-v2.crt latloto-intermediate-server-v1.crt > combined-chain.crt
+
+# Izveidot secret 'iloto-wildcard-tls' Traefik vārda telpā
+kubectl create secret tls iloto-wildcard-tls \
+  --cert=combined-chain.crt \
+  --key=wildcard.iloto.lldev.key \
+  -n traefik
 
 ### Traefik uzstādīšana ar Helm
 
