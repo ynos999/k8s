@@ -1,0 +1,17 @@
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: traefik-vip-pool
+  namespace: metallb-system
+spec:
+  addresses:
+  - 192.168.1.190/32 
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: traefik-l2-advertisement
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+  - traefik-vip-pool
