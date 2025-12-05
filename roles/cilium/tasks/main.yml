@@ -1,0 +1,33 @@
+---
+- hosts: k8s_masters
+  become: yes
+  tasks:
+
+    - name: Download Cilium CLI
+      ansible.builtin.get_url:
+        url: "https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz"
+        dest: /tmp/cilium.tar.gz
+
+    - name: Extract Cilium CLI
+      ansible.builtin.unarchive:
+        src: /tmp/cilium.tar.gz
+        dest: /usr/local/bin/
+        remote_src: yes
+
+    - name: Ensure cilium binary is executable
+      ansible.builtin.file:
+        path: /usr/local/bin/cilium
+        mode: '0755'
+
+    - name: Install Cilium CNI
+      ansible.builtin.command: >
+        cilium install --version 1.16.0
+        --set kubeProxyReplacement=strict
+        --set loadBalancer.mode=dsr
+
+    - name: Wait for Cilium to become ready
+      ansible.builtin.command: cilium status --wait
+      register: cilium_status
+      retries: 10
+      delay: 6
+      until: cilium_status.rc == 0

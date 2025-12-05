@@ -22,7 +22,13 @@
     - k8s-join-workers
 
 # Master1 instalē weave
+# - hosts: master1
+#   become: yes
+#   roles:
+#     - weave
+
+# Master1 instalē cilium
 - hosts: master1
   become: yes
   roles:
-    - weave
+    - cilium

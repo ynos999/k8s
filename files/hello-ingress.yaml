@@ -2,10 +2,11 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: hello-ingress
+  namespace: default
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web, websecure
-    # Piesaistīt Middleware novirzīšanai
-    traefik.ingress.kubernetes.io/router.middlewares: default-redirect-to-https@kubernetescrd 
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    # Piesaistīt Middleware novirzīšanai. Ja tev ir globālais redirect (kā šobrīd) → izdzēs Middleware.
+    # traefik.ingress.kubernetes.io/router.middlewares: default-redirect-to-https@kubernetescrd
 spec:
   tls:
   - hosts:
