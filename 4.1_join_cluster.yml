@@ -28,7 +28,8 @@
 #     - weave
 
 # Master1 instalē cilium
-- hosts: master1
+- name: KUBERNETES CILIUM CNI UZSTĀDĪŠANA (v1.18.4) UZ ARM64
+  hosts: master1
   become: yes
   roles:
     - cilium

@@ -106,6 +106,23 @@ sudo systemctl restart kubelet
 
 # Pēc kubeadm init un konfigurācijas iestatīšanas uz Master 1 weave
 kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s.yaml
+
+Labālk ir:
+https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz
+https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-arm64.tar.gz
+
+Calico, Flannel, Weave
+
+Dzēst Cilium:
+export KUBECONFIG=/etc/kubernetes/admin.conf
+helm uninstall cilium -n kube-system
+kubectl -n kube-system delete ds cilium cilium-envoy
+kubectl -n kube-system delete deploy cilium-operator
+kubectl -n kube-system delete pod -l k8s-app=cilium
+kubectl get crds | grep cilium | awk '{print $1}' | xargs kubectl delete crd
+kubectl get pods -n kube-system -l k8s-app=cilium
+kubectl get crds | grep cilium
+
 ---
 7. Uzlikt MetalLB (Layer 2) + Traefik kā Ingress Controller
 # ansible-playbook -i hosts_wolf.ini 5_install_helm.yml

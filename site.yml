@@ -101,10 +101,10 @@
           ingress:
             enabled: false # Ingress veidosim manuāli, nevis ar Helm
 
-    - name: Izveidot Traefik Middleware HTTP -> HTTPS novirzīšanai
-      kubernetes.core.k8s:
-        state: present
-        src: "{{ playbook_dir }}/files/redirect-middleware.yaml"
+    # - name: Izveidot Traefik Middleware HTTP -> HTTPS novirzīšanai
+    #   kubernetes.core.k8s:
+    #     state: present
+    #     src: "{{ playbook_dir }}/files/redirect-middleware.yaml"
 
     - name: Izveidot Ingress resursu
       kubernetes.core.k8s:

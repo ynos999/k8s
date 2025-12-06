@@ -1,10 +1,11 @@
 - import_playbook: 2_keepalived.yml
-# - import_playbook: 3_ca_import_latloto.yml
 - import_playbook: 4_k8s_ha.yml
 - import_playbook: 4.1_join_cluster.yml
-- import_playbook: 5_install_helm.yml
-- import_playbook: 6_python.yml
-- import_playbook: 6.1_metallb.yml
 
-# ansible-playbook -i hosts.ini 1_setup.yml
-# ansible-playbook -i hosts_wolf.ini master_playbook.yml
+# - import_playbook: 3_ca_import_latloto.yml
+# - import_playbook: 5_install_helm.yml
+# - import_playbook: 6_python.yml
+# - import_playbook: 6.1_metallb.yml
+
+# ansible-playbook -i hosts.ini 0_setup.yml
+# ansible-playbook -i hosts_wolf.ini 1_master_playbook.yml
