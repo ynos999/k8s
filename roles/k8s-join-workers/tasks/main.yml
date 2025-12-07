@@ -4,6 +4,10 @@
     path: /etc/kubernetes/kubelet.conf
   register: kubelet_conf_worker
 
+# - name: Pievienot worker mezglus
+#   command: "{{ hostvars['master1'].join_cmd_worker }}"
+#   when: kubelet_conf_worker.stat.exists == false
+
 - name: Pievienot worker mezglus
-  command: "{{ hostvars['master1'].join_cmd_worker }}"
+  shell: "{{ hostvars['master1'].join_cmd_worker | trim }}"  # Izmantojiet 'trim' filtru, lai noņemtu liekas atstarpes/jaunas rindas
   when: kubelet_conf_worker.stat.exists == false

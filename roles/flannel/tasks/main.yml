@@ -1,0 +1,44 @@
+---
+- name: 0.1. Uzstādīt python3-pip (ja nepieciešams)
+  ansible.builtin.apt:
+    name: python3-pip
+    state: present
+
+- name: 0.2. Uzstādīt Kubernetes Python bibliotēku (kubernetes-client)
+  ansible.builtin.pip:
+    name: kubernetes
+    state: present
+    # Izmantojiet šo argumentu, lai ignorētu PEP 668 bloķēšanu
+    extra_args: --break-system-packages
+    executable: pip3 
+  become: yes
+
+
+- name: 1. Download Flannel manifest
+  ansible.builtin.get_url:
+    url: "{{ flannel_url }}"
+    dest: "{{ target_path }}"
+    mode: '0644'
+
+- name: 2. Patch the ConfigMap CIDR in the downloaded file
+  ansible.builtin.lineinfile:
+    path: "{{ target_path }}"
+    regexp: '^\s*\"Network\":\s*\"10.244.0.0/16\",'
+    line: '      "Network": "{{ required_cidr }}",'
+    state: present
+
+- name: 3. Apply the patched Flannel CNI configuration
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ target_path }}"
+    namespace: kube-flannel
+
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+# - name: 4. Remove stale Cilium Taint from all nodes
+#   ansible.builtin.command:
+#     cmd: "kubectl taint nodes {{ item }} node.cilium.io/agent-not-ready:NoSchedule-"
+#   loop: "{{ groups['k8s_nodes'] }}"
+#   delegate_to: localhost 
+#   ignore_errors: yes

@@ -6,6 +6,7 @@
   register: kubeadm_admin_conf
 
 # 2. Create kubeadm config (only for first init)
+# Pēc uzdevuma bija serviceSubnet: "172.17.0.0/12"
 - name: Create kubeadm config
   copy:
     dest: /root/kubeadm-config.yaml
@@ -16,7 +17,7 @@
       controlPlaneEndpoint: "192.168.4.190:6443"
       networking:
         podSubnet: "172.16.0.0/16"
-        serviceSubnet: "172.17.0.0/12"
+        serviceSubnet: "10.96.0.0/12"
 
       ---
       apiVersion: kubeadm.k8s.io/v1beta4

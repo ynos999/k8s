@@ -823,3 +823,104 @@ kubectl get ingress hello-ingress -n default
 3.  Pārlūkprogrammai jāparāda "Hello World" aplikācijas saturs ar derīgu TLS savienojumu, ko parakstījis jūsu CA.
 
 Vai vēlaties, lai es detalizētāk paskaidrotu kādu no šiem soļiem, piemēram, **Helm vērtību** nozīmi Traefik konfigurācijā?
+
+
+
+1. wget https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
+2. nano kube-flannel.yml mainam uz 172.16.0.0/16
+3. kubectl apply -f kube-flannel.yml
+4. kubectl get pods -n kube-flannel
+kubectl run netshoot-a --image=nicolaka/netshoot -- sleep infinity
+kubectl run netshoot-b --image=nicolaka/netshoot -- sleep infinity
+kubectl get nodes
+kubectl get pods netshoot-a netshoot-b
+kubectl describe pod netshoot-a
+kubectl taint nodes master1 node.cilium.io/agent-not-ready:NoSchedule-
+kubectl taint nodes master2 node.cilium.io/agent-not-ready:NoSchedule-
+kubectl taint nodes master3 node.cilium.io/agent-not-ready:NoSchedule-
+kubectl taint nodes worker1 node.cilium.io/agent-not-ready:NoSchedule-
+kubectl taint nodes worker2 node.cilium.io/agent-not-ready:NoSchedule-
+POD_B_IP=$(kubectl get pod netshoot-b -o jsonpath='{.status.podIP}')
+echo "netshoot-b IP adrese: $POD_B_IP"
+
+kubectl exec -it netshoot-b -- nc -l -p 8080
+Uz citas nodes:
+kubectl exec netshoot-a -- nc -vz 172.16.4.2 8080
+
+kubectl delete pod netshoot-a netshoot-b
+
+kubectl delete -f kube-flannel.yml
+
+
+  1. CNI Nestrādāšanas Cēloņi (Kopsavilkums)
+Problēma nebija viena, bet gan trīs dažādas kļūdas, kas bloķēja Flannel darbību, parasti radot stāvokli CrashLoopBackOff vai Pending:
+
+1. Zema līmeņa OS (Linux Kodols) Kļūdas
+Šīs bija pirmās kļūdas, kas neļāva CNI aģentam veikt pamata tīkla darbības:
+
+Trūkstošs kodola modulis: Uz mezgliem nebija ielādēts modulis br_netfilter, kas ir nepieciešams, lai VXLAN (Flannel tunelēšana) integrētos ar Linux tilta (bridge) funkcionalitāti.
+
+sysctl vērtība: Kodola iestatījums net.bridge.bridge-nf-call-iptables nebija iestatīts uz 1, kas neļāva iptables redzēt tiltu trafiku.
+
+2. Augsta līmeņa Konfigurācijas Konflikts
+Pēc kodola problēmas atrisināšanas, CNI avarēja jau cita iemesla dēļ:
+
+CIDR nesakritība: Jūsu kubeadm klasteris tika inicializēts ar Podu CIDR diapazonu 172.16.0.0/16, bet Flannel konfigurācijas karte (ConfigMap) joprojām saturēja noklusējuma Flannel diapazonu 10.244.0.0/16. Flannel nevarēja iegūt tīkla nomu no klastera.
+
+3. Cilium Atliekas (Taint)
+Pēc tam, kad Flannel sāka strādāt, darba slodzes nespēja startēt:
+
+Atdzīvināts Taint: Pēc neveiksmīgas Cilium instalācijas, uz mezgliem palika atzīme (Taint): node.cilium.io/agent-not-ready. Kubernetes Plānotājs to uzskatīja par aizliegumu un neļāva testa podiem (netshoot-a/b) pāriet no Pending stāvokļa.
+
+---
+Pārbaudīt Traefik Servisu un IP Adresi
+Vispirms pārliecinieties, ka MetalLB ir veiksmīgi piešķīris Traefik LoadBalancer servisam paredzēto IP adresi (192.168.4.190).
+kubectl get svc traefik -n traefik
+Pārbaudīt Traefik IngressRoute
+kubectl get ingressroute,tlsstore,middleware -n default
+A.
+curl -k https://192.168.4.190/ -H "Host: hello.iloto.lldev"
+B. 
+curl -I -v http://192.168.4.190/ -H "Host: hello.iloto.lldev"
+
+kubectl describe svc traefik -n traefik
+kubectl get svc traefik -n traefik
+
+Šis izvads skaidri atklāj problēmas cēloni! 🥳
+
+Problēma nav tīkla konfliktā ar ārēju ierīci, bet gan konfliktā pašā Kubernetes klasterī ar citu Servisu vai IngressRoute.
+
+🛑 Galvenais Cēlonis: IP Adrese Lietošanā ar Citu Servisu
+Aplūkojot sadaļu Events:
+
+Warning AllocationFailed 11m metallb-controller Failed to allocate IP for "traefik/traefik": can't change sharing key for "traefik/traefik", address also in use by default/traefik-crd
+1. Konflikta Adrese un Resurss
+IP Adrese: 192.168.4.190
+
+Kļūda: address also in use by default/traefik-crd
+
+Kļūdas iemesls: can't change sharing key for "traefik/traefik"
+
+Tas nozīmē, ka MetalLB kontrolieris redz, ka IP adrese 192.168.4.190 jau ir piesaistīta kādam citam resursam ar nosaukumu traefik-crd vārda telpā default. Šis vecais resurss, visticamāk, ir palicis pāri no viena no jūsu agrīnajiem (un neveiksmīgajiem) Traefik instalēšanas mēģinājumiem.
+
+2. "Sharing Key" Konflikts
+MetalLB izmanto metallb.universe.tf/allow-shared-ip anotāciju (k8s-shared-vip) Servisā, lai ļautu vairākiem LoadBalancer Servisiem izmantot vienu un to pašu IP adresi. Tomēr, ja viens no Servisiem (vecais traefik-crd no default namespace) šo anotāciju vai IP bija piesaistījis bez koplietošanas atbalsta, MetalLB neļaus jaunajam Servisam (šim traefik/traefik) pārņemt IP adresi.
+
+🛠️ Risinājums: Konfliktējošā Resursa Noņemšana
+Jums ir jāatrod un jāizdzēš vecais, konfliktējošais resurss traefik-crd vārda telpā default.
+
+Solis 1: Atrodiet un Pārbaudiet Konfiktējošo Resursu
+Pārbaudiet, kas tieši ir traefik-crd. Tas varētu būt Service vai IngressRoute.
+# Meklēt Service ar šo nosaukumu:
+kubectl get svc traefik-crd -n default
+# Vai arī meklēt IngressRoute/citu resursu:
+kubectl get all -n default | grep traefik
+Dzēsiet Konfliktējošo Resursu
+Kad esat identificējis tā tipu (piemēram, tas ir Service), izdzēsiet to:
+# Pieņemsim, ka tas ir Service:
+kubectl delete svc traefik-crd -n default
+# Ja tas ir IngressRoute:
+# kubectl delete ingressroute traefik-crd -n default
+
+kubectl get ingressroute -n default
+kubectl get middleware redirect-to-https -n default -o yaml

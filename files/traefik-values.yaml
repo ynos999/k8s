@@ -1,3 +1,4 @@
+# 1. VISPĀRĒJIE IESTATĪJUMI
 service:
   enabled: true
   type: LoadBalancer
@@ -9,15 +10,38 @@ service:
 providers:
   kubernetesIngress:
     enabled: true
+    publishedService:
+      enabled: true
 
-tls:
+# 2. CRD IESTATĪJUMI
+# Svarīgi, lai varētu izmantot Traefik Custom Resource Definitions (TLSStore, Middleware).
+crds:
   enabled: true
 
-globalArguments:
-  - "--entrypoints.web.address=:80"
-  - "--entrypoints.websecure.address=:443"
-  - "--entrypoints.websecure.tls.defaultcertificate.secretname=iloto-wildcard-tls"
-  - "--entrypoints.websecure.tls.defaultcertificate.namespace=traefik"
-  - "--entrypoints.web.http.redirections.entrypoint.to=:443"
-  - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
-  - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
+# 3. HELM NODALĪJUMU TĪRĪŠANA
+# Šis bloks tiek atstāts tukšs, jo tiks izmantots TLSStore CRD.
+defaultCert: {}
+
+# 4. ENTRYPOINTS DEFINĪCIJA (HTTP -> HTTPS pāradresācija)
+entryPoints:
+  web:
+    address: ":80"
+    # HTTP -> HTTPS Pāradresācijas noteikumi
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true # 301 statuss
+
+  websecure:
+    address: ":443"
+    tls:
+      enabled: true
+
+# 5. RBAC un Kubernetes atbalsts
+rbac:
+  enabled: true
+
+# Global Arguments paliek tukši, jo EntryPoints ir definēti augstāk
+globalArguments: {}

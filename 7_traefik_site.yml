@@ -1,0 +1,132 @@
+---
+# ====================================================================
+# GALVENĀ SPĒLE: UZSTĀDĪŠANA UZ MASTER MEZGLA
+# ====================================================================
+- name: 3. TRAEFIK UN APLIKĀCIJAS INSTALĀCIJA
+  hosts: master1
+  become: yes
+
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+  tasks:
+    # --- 3.1. TRAEFIK INSTALĀCIJA (HELM) ---
+
+    - name: 3.1.1. Pievienot Traefik Helm repozitoriju
+      kubernetes.core.helm_repository:
+        name: traefik
+        repo_url: https://helm.traefik.io/traefik
+        state: present
+
+    - name: 3.1.1.5. Izveidot 'traefik' vārda telpu
+      kubernetes.core.k8s:
+        name: traefik
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: 3.1.2. Uzstādīt Traefik Ingress Controller
+      kubernetes.core.helm:
+        name: traefik
+        chart_ref: traefik/traefik
+        release_namespace: traefik
+        create_namespace: true
+        # Tiek izmantots FAILS NO ANSIBLE KONTROLIERA
+        values_files:
+          - traefik-values.yaml 
+        state: present
+        # wait: yes
+        wait: false
+        # wait_timeout: 300s
+
+    # --- 3.2. APLIKĀCIJAS INSTALĀCIJA (HELM) ---
+
+    - name: 3.2.1. Pievienot Bitnami Helm repozitoriju (novērš kļūdu)
+      kubernetes.core.helm_repository:
+        name: bitnami
+        repo_url: https://charts.bitnami.com/bitnami
+        state: present
+
+    - name: 3.2.2. Uzstādīt Nginx aplikāciju (Hello App)
+      kubernetes.core.helm:
+        name: hello-app-nginx # Mainām nosaukumu uz hello-app-nginx labākai skaidrībai
+        chart_ref: bitnami/nginx
+        release_namespace: default
+        state: present
+        values:
+          service:
+            type: ClusterIP
+          ingress:
+            enabled: false # Izslēdzam Bitnami noklusējuma Ingress
+
+    # --- 3.3. TRAEFIK CRD KONFIGURĀCIJA ---
+
+    - name: 3.3.1. Izveidot Traefik TLSStore CRD
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: traefik.io/v1alpha1
+          kind: TLSStore
+          metadata:
+            name: default
+            namespace: traefik
+          spec:
+            defaultCertificate:
+              secretName: iloto-wildcard-tls
+
+    - name: 3.3.2. Izveidot Traefik Middleware CRD (Pāradresācija)
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: traefik.io/v1alpha1
+          kind: Middleware
+          metadata:
+            name: redirect-to-https
+            namespace: default
+          spec:
+            redirectScheme:
+              permanent: true
+              scheme: https
+              port: "443"
+
+    - name: 3.3.3a. Izveidot Traefik HTTP IngressRoute (Pāradresācija)
+      kubernetes.core.k8s:
+        state: present
+        definition: |
+          apiVersion: traefik.io/v1alpha1
+          kind: IngressRoute
+          metadata:
+            name: http-redirect-route
+            namespace: default
+          spec:
+            entryPoints:
+              - web # Piesaista tikai 80. portam
+            routes:
+              - match: Host(`hello.iloto.lldev`)
+                kind: Rule
+                middlewares:
+                  - name: redirect-to-https
+                services:
+                  - name: hello-app-nginx
+                    port: 80
+
+    - name: 3.3.3b. Izveidot Traefik HTTPS IngressRoute (TLS Saturs)
+      kubernetes.core.k8s:
+        state: present
+        definition: |
+          apiVersion: traefik.io/v1alpha1
+          kind: IngressRoute
+          metadata:
+            name: https-secure-route
+            namespace: default
+          spec:
+            entryPoints:
+              - websecure # Piesaista tikai 443. portam
+            routes:
+              - match: Host(`hello.iloto.lldev`)
+                kind: Rule
+                services:
+                  - name: hello-app-nginx
+                    port: 80
+            tls:
+              secretName: iloto-wildcard-tls

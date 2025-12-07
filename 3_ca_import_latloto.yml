@@ -4,7 +4,7 @@
   become: yes
 
   vars:
-    cert_dest_dir: "/root/certs"
+    cert_dest_dir: "/root/"
     ca_certificates:
       - "latloto-ca.crt"
       - "latloto-intermediate-server-v1.crt"
@@ -12,7 +12,7 @@
     wildcard_cert_name: "wildcard.iloto.lldev"
 
   tasks:
-    - name: Ensure /root/certs exists
+    - name: Ensure /root/ exists
       file:
         path: "{{ cert_dest_dir }}"
         state: directory

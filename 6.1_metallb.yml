@@ -1,11 +1,82 @@
 ---
+# ====================================================================
+# POSMS 1: TLS SERTIFIKĀTU SAGATAVOŠANA UN KUBERNETES SECRETS IZVEIDE
+# Tiek izpildīts tikai uz master1, lai apstrādātu failus.
+# ====================================================================
+- name: 1. Sertifikātu sagatavošana uz Master1 un Secret izveide
+  hosts: master1 
+  become: yes
+
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+  tasks:
+    # 1. Apvienot sertifikātu ķēdi (tiek izpildīts uz master1)
+    - name: 1.1. Apvienot sertifikātu ķēdi (wildcard + intermediate)
+      ansible.builtin.shell: |
+        cd /root/
+        # Svarīgi: Pārliecinieties, ka šī ir pareizā secība (wildcard.crt AUGŠPUSĒ)
+        cat wildcard.iloto.lldev.crt latloto-intermediate-server-v2.crt latloto-intermediate-server-v1.crt > combined-chain.crt
+      args:
+        creates: /root/combined-chain.crt
+
+    # 2. Lejupielādēt nepieciešamos failus uz Ansible Control Node
+    - name: 1.2. Fetch/Lejupielādēt apvienoto sertifikātu uz lokālo mašīnu
+      ansible.builtin.fetch:
+        src: /root/combined-chain.crt
+        dest: /tmp/ansible-certs/
+        flat: yes
+        
+    - name: 1.3. Fetch/Lejupielādēt atslēgu uz lokālo mašīnu
+      ansible.builtin.fetch:
+        src: /root/wildcard.iloto.lldev.key
+        dest: /tmp/ansible-certs/
+        flat: yes
+
+    - name: 1.4. Izveidot 'traefik' vārda telpu (ja nepieciešams)
+      kubernetes.core.k8s:
+        name: traefik
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    # 3. Izveidot Secret TRAEFIK namespace (Izmanto Helm un TLSStore)
+    - name: 1.5. Izveidot TLS Secret 'iloto-wildcard-tls' traefik namespace
+      kubernetes.core.k8s:
+        state: present
+        namespace: traefik
+        resource_definition: |
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: iloto-wildcard-tls
+          type: kubernetes.io/tls
+          data:
+            tls.crt: "{{ lookup('file', '/tmp/ansible-certs/combined-chain.crt') | b64encode }}"
+            tls.key: "{{ lookup('file', '/tmp/ansible-certs/wildcard.iloto.lldev.key') | b64encode }}"
+
+    # 4. Izveidot Secret DEFAULT namespace
+    - name: 1.6. Izveidot TLS Secret 'iloto-wildcard-tls' default namespace
+      kubernetes.core.k8s:
+        state: present
+        namespace: default
+        resource_definition: |
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: iloto-wildcard-tls
+          type: kubernetes.io/tls
+          data:
+            tls.crt: "{{ lookup('file', '/tmp/ansible-certs/combined-chain.crt') | b64encode }}"
+            tls.key: "{{ lookup('file', '/tmp/ansible-certs/wildcard.iloto.lldev.key') | b64encode }}"
+
 - name: Install MetalLB and Configure Layer2
   hosts: masters
   become: yes
   vars:
     metallb_namespace: metallb-system
-    vip: 192.168.1.190
-    metallb_ip_range: "192.168.1.190-192.168.1.190"
+    vip: 192.168.4.190
+    metallb_ip_range: "192.168.4.190-192.168.4.190"
     metallb_version: "0.14.3" # Ieteicamā stabila versija 
 
   environment:
@@ -48,7 +119,6 @@
         release_namespace: "{{ metallb_namespace }}"
         create_namespace: false
         values: {}
-        # LABOTS: Nomainīts nepareizais 'version' parametrs uz pareizo 'chart_version'
         chart_version: "{{ metallb_version }}" 
         wait: yes
         wait_timeout: 300s
@@ -65,7 +135,6 @@
             name: metallb-memberlist
             namespace: "{{ metallb_namespace }}"
           stringData:
-            # LABOTS: Izmantota standarta 'password' lookup funkcija, lai izvairītos no atkarības kļūdas
             secretkey: "{{ lookup('password', '/dev/null length=128 chars=ascii_letters,digits') }}"
       run_once: true
 
