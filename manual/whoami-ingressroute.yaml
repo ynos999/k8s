@@ -1,0 +1,34 @@
+# whoami-ingressroute.yaml
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: app-whoami-https-secure
+  namespace: default
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`whoami.iloto.lldev`)
+      kind: Rule
+      services:
+        - name: app-whoami-svc # <--- LABOTS: Jābūt app-whoami-svc
+          port: 80
+  tls:
+    secretName: iloto-wildcard-tls
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: app-whoami-http-redirect
+  namespace: default
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`whoami.iloto.lldev`)
+      kind: Rule
+      middlewares:
+        - name: redirect-to-https
+      services:
+        - name: app-whoami-svc # <--- PAREIZI
+          port: 80

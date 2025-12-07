@@ -1,0 +1,80 @@
+---
+- name: Aplikācija (data.iloto.lldev)
+  hosts: master1
+  become: yes
+  
+  tasks:
+    - name: Pārbaudīt, vai Traefik Middleware jau pastāv (Aizsardzība pret kļūdām)
+      kubernetes.core.k8s_info:
+        api_version: traefik.io/v1alpha1
+        kind: Middleware
+        name: redirect-to-https
+        namespace: default
+      register: middleware_info
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+
+    # --- 1. HTTP Pāradresācija (80. ports) ---
+    - name: 1. Izveidot Traefik HTTP IngressRoute (DATA Pāradresācija)
+      kubernetes.core.k8s:
+        state: present
+        definition: |
+          apiVersion: traefik.io/v1alpha1
+          kind: IngressRoute
+          metadata:
+            name: data-http-redirect-route
+            namespace: default
+          spec:
+            entryPoints:
+              - web # Piesaista 80. portam
+            routes:
+              - match: Host(`data.iloto.lldev`) # JAUNAIS HOSTS
+                kind: Rule
+                middlewares:
+                  - name: redirect-to-https
+                services:
+                  - name: hello-app-nginx # <-- LABOJUMS: Pareizais Servisa nosaukums
+                    port: 80
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      when: middleware_info.resources is defined and middleware_info.resources | length > 0
+
+    # --- 2. HTTPS Satura Route (443. ports) ---
+    - name: 2. Izveidot Traefik HTTPS IngressRoute (DATA TLS Saturs)
+      kubernetes.core.k8s:
+        state: present
+        definition: |
+          apiVersion: traefik.io/v1alpha1
+          kind: IngressRoute
+          metadata:
+            name: data-https-secure-route
+            namespace: default
+          spec:
+            entryPoints:
+              - websecure # Piesaista 443. portam
+            routes:
+              - match: Host(`data.iloto.lldev`) # JAUNAIS HOSTS
+                kind: Rule
+                services:
+                  - name: hello-app-nginx # <-- LABOJUMS: Pareizais Servisa nosaukums
+                    port: 80
+            tls:
+              secretName: iloto-wildcard-tls # Izmanto esošo sertifikātu
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      when: middleware_info.resources is defined and middleware_info.resources | length > 0
+
+    # --- 3.2.2. Aplikācijas Instalācija (Nginx) ---
+    - name: 3.2.2. Uzstādīt Aplikāciju (nginx-app)
+      kubernetes.core.helm:
+        name: hello-app-nginx # Relīzes nosaukums paliek nemainīgs
+        chart_ref: bitnami/nginx
+        release_namespace: default
+        state: present
+        values:
+          service:
+            type: ClusterIP
+          ingress:
+            enabled: false
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf

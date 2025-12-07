@@ -1,7 +1,5 @@
 ---
-# ====================================================================
-# GALVENĀ SPĒLE: UZSTĀDĪŠANA UZ MASTER MEZGLA
-# ====================================================================
+# UZSTĀDĪŠANA UZ MASTER MEZGLA
 - name: 3. TRAEFIK UN APLIKĀCIJAS INSTALĀCIJA
   hosts: master1
   become: yes
@@ -10,7 +8,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
 
   tasks:
-    # --- 3.1. TRAEFIK INSTALĀCIJA (HELM) ---
+    # TRAEFIK INSTALĀCIJA (HELM)
 
     - name: 3.1.1. Pievienot Traefik Helm repozitoriju
       kubernetes.core.helm_repository:
@@ -24,22 +22,39 @@
         api_version: v1
         kind: Namespace
         state: present
-
+    
+    - name: 3.1.1.5. Kopēt 'traefik-values.yaml' uz Master mezglu
+      ansible.builtin.copy:
+        src: traefik-values.yaml  # Fails no lokālās Playbook direktorijas
+        dest: /tmp/traefik-values.yaml # Galamērķis uz Master1
+        mode: '0644'
+    
     - name: 3.1.2. Uzstādīt Traefik Ingress Controller
       kubernetes.core.helm:
         name: traefik
         chart_ref: traefik/traefik
         release_namespace: traefik
         create_namespace: true
-        # Tiek izmantots FAILS NO ANSIBLE KONTROLIERA
         values_files:
-          - traefik-values.yaml 
+          - /tmp/traefik-values.yaml # <-- IZMAIŅA: Norādīts ceļš uz Master1
         state: present
-        # wait: yes
         wait: false
-        # wait_timeout: 300s
 
-    # --- 3.2. APLIKĀCIJAS INSTALĀCIJA (HELM) ---
+    # - name: 3.1.2. Uzstādīt Traefik Ingress Controller
+    #   kubernetes.core.helm:
+    #     name: traefik
+    #     chart_ref: traefik/traefik
+    #     release_namespace: traefik
+    #     create_namespace: true
+    #     # Tiek izmantots FAILS NO ANSIBLE KONTROLIERA
+    #     values_files:
+    #       - traefik-values.yaml 
+    #     state: present
+    #     # wait: yes
+    #     wait: false
+    #     # wait_timeout: 300s
+
+    # APLIKĀCIJAS INSTALĀCIJA (HELM)
 
     - name: 3.2.1. Pievienot Bitnami Helm repozitoriju (novērš kļūdu)
       kubernetes.core.helm_repository:
@@ -59,7 +74,7 @@
           ingress:
             enabled: false # Izslēdzam Bitnami noklusējuma Ingress
 
-    # --- 3.3. TRAEFIK CRD KONFIGURĀCIJA ---
+    # TRAEFIK CRD KONFIGURĀCIJA
 
     - name: 3.3.1. Izveidot Traefik TLSStore CRD
       kubernetes.core.k8s:

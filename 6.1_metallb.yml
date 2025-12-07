@@ -1,8 +1,6 @@
 ---
-# ====================================================================
 # POSMS 1: TLS SERTIFIKĀTU SAGATAVOŠANA UN KUBERNETES SECRETS IZVEIDE
 # Tiek izpildīts tikai uz master1, lai apstrādātu failus.
-# ====================================================================
 - name: 1. Sertifikātu sagatavošana uz Master1 un Secret izveide
   hosts: master1 
   become: yes
@@ -83,9 +81,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
 
   tasks:
-    # ===============================
     # 0. Tīrīšana un Namespaces
-    # ===============================
     - name: Clean up existing failed MetalLB release (if any)
       kubernetes.core.helm:
         name: metallb
@@ -102,9 +98,7 @@
         state: present
       run_once: true
 
-    # ===============================
     # 1. MetalLB Instalācija
-    # ===============================
     - name: Add MetalLB Helm repo
       kubernetes.core.helm_repository:
         name: metallb
@@ -138,9 +132,7 @@
             secretkey: "{{ lookup('password', '/dev/null length=128 chars=ascii_letters,digits') }}"
       run_once: true
 
-    # ===============================
     # 2. MetalLB Konfigurācija (IP Pool un L2 Advertisement)
-    # ===============================
     - name: Configure MetalLB Layer2 IP pool
       kubernetes.core.k8s:
         state: present

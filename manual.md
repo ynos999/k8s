@@ -886,11 +886,11 @@ curl -I -v http://192.168.4.190/ -H "Host: hello.iloto.lldev"
 kubectl describe svc traefik -n traefik
 kubectl get svc traefik -n traefik
 
-Šis izvads skaidri atklāj problēmas cēloni! 🥳
+Šis izvads skaidri atklāj problēmas cēloni!
 
 Problēma nav tīkla konfliktā ar ārēju ierīci, bet gan konfliktā pašā Kubernetes klasterī ar citu Servisu vai IngressRoute.
 
-🛑 Galvenais Cēlonis: IP Adrese Lietošanā ar Citu Servisu
+Galvenais Cēlonis: IP Adrese Lietošanā ar Citu Servisu
 Aplūkojot sadaļu Events:
 
 Warning AllocationFailed 11m metallb-controller Failed to allocate IP for "traefik/traefik": can't change sharing key for "traefik/traefik", address also in use by default/traefik-crd
@@ -924,3 +924,21 @@ kubectl delete svc traefik-crd -n default
 
 kubectl get ingressroute -n default
 kubectl get middleware redirect-to-https -n default -o yaml
+
+
+1. Importēt Saknes CA Sertifikātu (latloto-ca.crt)
+Importējot Saknes CA sertifikātu, jūs dodat Firefox rīkojumu uzticēties visiem sertifikātiem, ko parakstījusi šī iestāde (ieskaitot jūsu wildcard sertifikātu).
+
+Atveriet Iestatījumus: Firefox atveriet Iestatījumi (Settings).
+
+Meklēt Sertifikātus: Kreisajā pusē izvēlieties Privātums un Drošība (Privacy & Security). Ritiniet uz leju līdz sadaļai Drošība (Security).
+
+Sertifikātu Pārvaldība: Noklikšķiniet uz pogas Sertifikāti (Certificates) vai Skatīt Sertifikātus (View Certificates).
+
+Importēšana: Cilnē Iestādes (Authorities) noklikšķiniet uz pogas Importēt...
+
+Izvēlieties failu: Atrodiet un izvēlieties failu latloto-ca.crt.
+
+Uzticēšanās Uzstādīšana: Parādīsies dialoglodziņš. Atzīmējiet izvēles rūtiņu: Uzticēties šai CA, lai identificētu vietnes (Trust this CA to identify websites).
+
+Noklikšķiniet uz Labi.

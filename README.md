@@ -21,12 +21,12 @@ sudo chmod 600 ~/.ssh/id_ed25519_vm
 ---
 # 1. ansible-playbook -i hosts.ini 0_setup.yml
 ---
-2 - 6.yml:
+2 - 7.yml:
 # ansible-playbook -i hosts_wolf.ini 1_master_playbook.yml
 
 # 2. ansible-playbook -i hosts_wolf.ini 2_keepalived.yml
 ---
-# 3. ansible-playbook -i hosts_wolf.ini 3_ca_import.yml
+# 3. ansible-playbook -i hosts_wolf.ini 3_ca_import_latloto.yml
 ---
 # 4. ansible-playbook -i hosts_wolf.ini 4_k8s_ha.yml
 ===
@@ -211,9 +211,5 @@ Labo
     insecure-skip-tls-verify: true
 
 kubectl get nodes     
-NAME      STATUS   ROLES           AGE   VERSION
-master1   Ready    control-plane   95m   v1.33.6
-master2   Ready    control-plane   88m   v1.33.6
-master3   Ready    control-plane   87m   v1.33.6
 
 choco install kubernetes-helm

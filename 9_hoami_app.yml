@@ -1,0 +1,127 @@
+---
+- name: WHOAMI APLIKĀCIJAS UZSTĀDĪŠANA (BEZ HELM)
+  hosts: master1
+  become: yes
+  
+  # ---------- LABOJUMS: Vars bloks pārvietots uz Play līmeni ----------
+  vars:
+    kubeconfig_path: /etc/kubernetes/admin.conf
+  
+  tasks:
+    # ----------------------------------------------
+    # 1. APLIKĀCIJAS (Deployment) IZVEIDE
+    # ----------------------------------------------
+    - name: 1.1. Izveidot Whoami Deployment
+      kubernetes.core.k8s:
+        state: present
+        definition: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: whoami-deployment-manual
+            namespace: default
+            labels:
+              app: whoami-manual
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: whoami-manual
+            template:
+              metadata:
+                labels:
+                  app: whoami-manual
+              spec:
+                containers:
+                - name: whoami
+                  image: traefik/whoami
+                  ports:
+                  - containerPort: 80 # Whoami noklusējuma ports
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    # ----------------------------------------------
+    # 2. SERVISA (Service) IZVEIDE
+    # ----------------------------------------------
+    - name: 1.2. Izveidot ClusterIP Servisu priekš Whoami
+      kubernetes.core.k8s:
+        state: present
+        definition: |
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: whoami-manual-svc # <-- Servisa nosaukums, ko izmantos IngressRoute
+            namespace: default
+          spec:
+            type: ClusterIP
+            ports:
+              - port: 80
+                targetPort: 80
+            selector:
+              app: whoami-manual # <-- Jāsakrīt ar Deployment labeli
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    # ----------------------------------------------
+    # 3. TRAEFIK INGRESSROUTE KONFIGURĀCIJA
+    # ----------------------------------------------
+
+    - name: Pārbaudīt, vai Traefik Middleware pastāv
+      kubernetes.core.k8s_info:
+        api_version: traefik.io/v1alpha1
+        kind: Middleware
+        name: redirect-to-https
+        namespace: default
+      register: middleware_info
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    # --- 3.1. HTTP Pāradresācija (80. ports) ---
+    - name: 3.1. Izveidot HTTP IngressRoute (MANUAL Pāradresācija)
+      kubernetes.core.k8s:
+        state: present
+        definition: |
+          apiVersion: traefik.io/v1alpha1
+          kind: IngressRoute
+          metadata:
+            name: manual-whoami-http-redirect
+            namespace: default
+          spec:
+            entryPoints:
+              - web
+            routes:
+              - match: Host(`manual.iloto.lldev`) # <-- JAUNAIS HOSTS
+                kind: Rule
+                middlewares:
+                  - name: redirect-to-https
+                services:
+                  - name: whoami-manual-svc # <-- Serviss, ko izveidojām solī 1.2.
+                    port: 80
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      when: middleware_info.resources is defined and middleware_info.resources | length > 0
+
+    # --- 3.2. HTTPS Satura Route (443. ports) ---
+    - name: 3.2. Izveidot HTTPS IngressRoute (MANUAL TLS Saturs)
+      kubernetes.core.k8s:
+        state: present
+        definition: |
+          apiVersion: traefik.io/v1alpha1
+          kind: IngressRoute
+          metadata:
+            name: manual-whoami-https-secure
+            namespace: default
+          spec:
+            entryPoints:
+              - websecure
+            routes:
+              - match: Host(`manual.iloto.lldev`) # <-- JAUNAIS HOSTS
+                kind: Rule
+                services:
+                  - name: whoami-manual-svc
+                    port: 80
+            tls:
+              secretName: iloto-wildcard-tls
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      when: middleware_info.resources is defined and middleware_info.resources | length > 0

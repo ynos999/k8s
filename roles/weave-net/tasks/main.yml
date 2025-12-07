@@ -1,0 +1,25 @@
+---
+- name: 1. Lejupielādēt Weave Net manifestu
+  ansible.builtin.get_url:
+    url: https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s.yaml
+    dest: /tmp/weave-cni.yml
+    mode: '0644'
+  run_once: true
+
+- name: 2. Pievienot IPALLOC_RANGE ar sed (Pod CIDR: 172.16.0.0/16)
+  ansible.builtin.shell: |
+    # Nomaina rindiņu, kas satur '# - name: IPALLOC_RANGE' ar divām rindiņām:
+    # 1) - name: IPALLOC_RANGE
+    # 2)   value: 172.16.0.0/16
+    sed -i "/# - name: IPALLOC_RANGE/c\            - name: IPALLOC_RANGE\\n              value: 172.16.0.0/16" /tmp/weave-cni.yml
+  args:
+    executable: /bin/bash
+  run_once: true # Jāizpilda tikai vienu reizi uz Master mezgla
+  
+- name: 3. Instalēt Weave Net CNI ar pielāgotu CIDR
+  kubernetes.core.k8s:
+    state: present
+    src: /tmp/weave-cni.yml
+    environment:
+      KUBECONFIG: /etc/kubernetes/admin.conf
+  run_once: true

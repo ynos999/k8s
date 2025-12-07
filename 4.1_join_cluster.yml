@@ -1,11 +1,11 @@
 ---
-# Master1 veic kubeadm init
+# Master1 veic kubeadm init.
 - hosts: master1
   become: yes
   roles:
     - k8s-init-master
 
-# Pārējie master mezgli pievienojas kontrolplānam (ar pauzi 60s)
+# Pārējie master mezgli pievienojas kontrolplānam ar pauzi 60s.
 - hosts: masters:!master1
   become: yes
   pre_tasks:
@@ -15,7 +15,7 @@
   roles:
     - k8s-join-controlplane
 
-# Strādnieki pievienojas kā worker
+# Strādnieki pievienojas kā worker ar pauzi 30s.
 - hosts: workers
   become: yes
   pre_tasks:
@@ -25,31 +25,22 @@
   roles:
     - k8s-join-workers
 
-# Master1 instalē weave
-# - hosts: master1
-#   become: yes
-#   roles:
-#     - weave
-
-# Master1 instalē cilium
-# - name: KUBERNETES CILIUM CNI UZSTĀDĪŠANA (v1.18.4)
-#   hosts: master1
-#   become: yes
-#   gather_facts: true
-#   vars:
-#     POD_CIDR: "172.16.0.0/16"
-#     K8S_HOST_IP: "192.168.4.190" # Nomainiet ar Jūsu API Servera IP
-#     K8S_SERVICE_PORT: 6443
-#   roles:
-#     - cilium
 
 - name: KUBERNETES Flannel CNI uzstādīšana un tīrīšana
   hosts: master1          
   become: yes             
   # gather_facts: false     # Šeit pārvietotais metadatu lauks
-  vars:                   # Šeit pārvietotie mainīgie
+  vars:
     flannel_url: "https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml"
     target_path: "/tmp/kube-flannel.yml"
     required_cidr: "172.16.0.0/16"
   roles:
     - flannel
+
+# - name: KUBERNETES CNI UZSTĀDĪŠANA (WEAVE NET)
+#   hosts: master1          
+#   become: yes             
+#   vars:                   
+#     required_cidr: "172.16.0.0/16" 
+#   roles:
+#     - weave-net

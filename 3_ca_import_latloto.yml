@@ -32,7 +32,7 @@
     - name: Copy wildcard certificate
       copy:
         src: "loto/{{ wildcard_cert_name }}.crt"
-        dest: "{{ cert_dest_dir }}/wildcard.crt"
+        dest: "{{ cert_dest_dir }}/wildcard.iloto.lldev.crt"
         owner: root
         group: root
         mode: '0644'
@@ -40,7 +40,7 @@
     - name: Copy wildcard key
       copy:
         src: "loto/{{ wildcard_cert_name }}.key"
-        dest: "{{ cert_dest_dir }}/wildcard.key"
+        dest: "{{ cert_dest_dir }}/wildcard.iloto.lldev.key"
         owner: root
         group: root
         mode: '0600'

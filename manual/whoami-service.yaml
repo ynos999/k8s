@@ -1,0 +1,13 @@
+# whoami-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-whoami-svc # <--- Šis ir Servisa nosaukums
+  namespace: default
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+  selector:
+    app: whoami-app # <--- Jāsakrīt ar Deployment labeli
