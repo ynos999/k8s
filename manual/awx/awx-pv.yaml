@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-pv-awx # Unikāls nosaukums
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage-awx # Jāsakrīt ar SC
+  hostPath:
+    path: /mnt/awx-storage # Jāsakrīt ar direktoriju uz mezgla

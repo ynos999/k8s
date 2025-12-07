@@ -1,0 +1,33 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: awx-http-redirect-route
+  namespace: awx # Svarīgi: Jābūt awx namespace!
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`awx.iloto.lldev`)
+      kind: Rule
+      middlewares:
+        - name: redirect-to-https@kubernetescrd # Jūsu globālais Middleware
+      services:
+        - name: ansible-awx-web # AWX Service, ko operators izveidoja
+          port: 80 # AWX Service ports
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: awx-https-secure-route
+  namespace: awx # Svarīgi: Jābūt awx namespace!
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`awx.iloto.lldev`)
+      kind: Rule
+      services:
+        - name: ansible-awx-web 
+          port: 80 # AWX Service ports
+  tls:
+    secretName: iloto-wildcard-tls # Jūsu esošais sertifikāts

@@ -6,6 +6,8 @@
 - import_playbook: 6_python.yml
 - import_playbook: 6.1_metallb.yml
 - import_playbook: 7_traefik_site.yml
+- import_playbook: 8_data_app_site.yml
+- import_playbook: 9_hoami_app.yml
 
 # ansible-playbook -i hosts.ini 0_setup.yml
 # ansible-playbook -i hosts_wolf.ini 1_master_playbook.yml

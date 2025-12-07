@@ -1,0 +1,11 @@
+apiVersion: awx.ansible.com/v1beta1
+kind: AWX
+metadata:
+  name: ansible-awx
+  namespace: awx
+spec:
+  # Izmantojam atpakaļsaderīgu lauku (service_type ar mazo s)
+  service_type: NodePort
+  # Jūsu definētā krātuves klase
+  postgres_storage_class: local-storage-awx
+  # AWX Operatora versijai, kas ir instalēta jūsu klasterī, šis ir vienīgais atļautais lauks krātuves klasei

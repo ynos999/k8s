@@ -942,3 +942,7 @@ Izvēlieties failu: Atrodiet un izvēlieties failu latloto-ca.crt.
 Uzticēšanās Uzstādīšana: Parādīsies dialoglodziņš. Atzīmējiet izvēles rūtiņu: Uzticēties šai CA, lai identificētu vietnes (Trust this CA to identify websites).
 
 Noklikšķiniet uz Labi.
+
+https://manual.iloto.lldev/
+https://data.iloto.lldev/
+https://hello.iloto.lldev/
