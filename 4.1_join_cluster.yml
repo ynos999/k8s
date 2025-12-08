@@ -9,9 +9,9 @@
 - hosts: masters:!master1
   become: yes
   pre_tasks:
-    - name: Gaidīt 60 sekundes pirms pievienošanās CP
+    - name: Gaidīt 30 sekundes pirms pievienošanās CP
       pause:
-        seconds: 60
+        seconds: 30
   roles:
     - k8s-join-controlplane
 

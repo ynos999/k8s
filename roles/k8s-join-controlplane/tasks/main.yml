@@ -4,10 +4,6 @@
     path: /etc/kubernetes/kubelet.conf
   register: kubelet_conf
 
-# - name: Pievienot pārējos master mezglus
-#   command: "{{ hostvars['master1'].join_cmd_master }}"
-#   when: kubelet_conf.stat.exists == false
-
 - name: Pievienot pārējos master mezglus
   shell: "{{ hostvars['master1'].join_cmd_master | trim }}"  # Izmantojiet 'trim' filtru, lai noņemtu liekas atstarpes/jaunas rindas
   when: kubelet_conf.stat.exists == false
