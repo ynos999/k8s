@@ -51,11 +51,13 @@
   set_fact:
     join_cmd_master: "{{ init_out.stdout | regex_search('kubeadm join[\\s\\S]+?--control-plane[^\n]+') }}"
   when: not kubeadm_admin_conf.stat.exists
+  run_once: true
 
 - name: Generate MASTER join command (existing cluster)
   command: kubeadm token create --print-join-command --certificate-key {{ cert_key.stdout }}
   register: join_out
   when: kubeadm_admin_conf.stat.exists
+  run_once: true
 
 - name: Set MASTER join command fact (existing cluster)
   set_fact:
@@ -66,7 +68,8 @@
 - name: Generate worker join command
   set_fact:
     join_cmd_worker: "{{ join_cmd_master | regex_replace('--control-plane.*', '') }}"
-
+  run_once: true
+  
 # 7. Debug output
 - debug:
     msg:

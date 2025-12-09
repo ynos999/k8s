@@ -1,62 +1,3 @@
-1. helm repo add awx-operator https://ansible-community.github.io/awx-operator-helm/
-2. helm repo update
-3. helm install ansible-awx-operator awx-operator/awx-operator -n awx --create-namespace
-4. kubectl get pods -n awx
-5. Create StorageClass and PV(Persistent Volume)
-nano awxstorage-class.yaml
-
----
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: local-storage
-  namespace: awx
-provisioner: kubernetes.io/no-provisioner
-volumeBindingMode: WaitForFirstConsumer
-
-kubectl create -f awxstorage-class.yaml
-kubectl get sc -n awx
-
-nano awx-pv.yaml
-
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: postgres-pv
-  namespace: awx
-spec:
-  capacity:
-    storage: 10Gi
-  accessModes:
-  - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: local-storage
-  hostPath:
-    path: /mnt/storage
-
-kubectl create -f awx-pv.yaml
-kubectl get pv postgres-pv
-6. Install Ansible AWX on Kubernetes
-nano ansible-awx.yaml
----
-apiVersion: awx.ansible.com/v1beta1
-kind: AWX
-metadata:
-  name: ansible-awx
-  namespace: awx
-spec:
-  service_type: nodeport
-  postgres_storage_class: local-storage
-
-kubectl create -f ansible-awx.yaml
-kubectl get pods -n awx
-kubectl get svc -n awx
-
-7. Access AWX Web Interface
-kubectl get secrets -n awx | grep -i admin-password
-kubectl get secret ansible-awx-admin-password -o jsonpath="{.data.password}" -n awx | base64 --decode ; echo
-
 https://www.linuxtechi.com/install-ansible-awx-on-kubernetes-cluster/
 
 ================================================================
@@ -65,6 +6,7 @@ helm repo add awx-operator https://ansible-community.github.io/awx-operator-helm
 helm repo update
 helm install ansible-awx-operator awx-operator/awx-operator -n awx --create-namespace
 kubectl get pods -n awx
+
 # Jums vajadzētu redzēt "awx-operator-controller-manager" podu ar statusu Running.
 2.
 nano awx-storage-class.yaml
@@ -85,8 +27,6 @@ kubectl get sc
 
 # Izveido AWX direktoriju
 sudo mkdir -p /mnt/awx-storage
-
-# Pārliecinieties, ka šai mapei ir pareizas atļaujas
 sudo chmod 777 /mnt/awx-storage
 
 4. 
@@ -110,7 +50,6 @@ spec:
 kubectl apply -f awx-pv.yaml
 kubectl get pv
 
-
 5. 
 nano ansible-awx.yaml
 
@@ -122,9 +61,9 @@ metadata:
   namespace: awx
 spec:
   # Izmantojam atpakaļsaderīgu lauku (service_type ar mazo s)
-  service_type: NodePort 
+  service_type: NodePort
   # Jūsu definētā krātuves klase
-  postgres_storage_class: local-storage-awx 
+  postgres_storage_class: local-storage-awx
   # AWX Operatora versijai, kas ir instalēta jūsu klasterī, šis ir vienīgais atļautais lauks krātuves klasei
 
 kubectl apply -f ansible-awx.yaml -n awx
@@ -173,7 +112,7 @@ kubectl apply -f awx-ingressroute.yaml -n awx
 
 kubectl get secret ansible-awx-admin-password -o jsonpath="{.data.password}" -n awx | base64 --decode ; echo
 
-AXCFkrGQ9Se7fkHXgSXX4qpPGXb7nWLX
+AOFktCycia19CqYUoFs2z17WyubAo8c8
 
 Adrese: https://awx.iloto.lldev Lietotājvārds: admin
 

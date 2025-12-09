@@ -1,0 +1,24 @@
+- hosts: all
+  become: yes
+  tasks:
+
+    - name: Pārbaudīt, vai /dev/sdb jau ir PV
+      command: pvs --noheadings -o pv_name
+      register: existing_pvs
+      changed_when: false
+
+    - name: Izveidot PV uz /dev/sdb, ja nepieciešams
+      command: pvcreate /dev/sdb
+      when: "'/dev/sdb' not in existing_pvs.stdout"
+      ignore_errors: false
+
+    - name: Pievienot PV esošajam VG, ja vēl nav pievienots
+      command: vgextend ubuntu-vg /dev/sdb
+      when: "'/dev/sdb' not in existing_pvs.stdout"
+      ignore_errors: false
+
+    - name: Paplašināt LV ar visu brīvo vietu
+      command: lvextend -l +100%FREE /dev/mapper/ubuntu--vg-ubuntu--lv
+
+    - name: Paplašināt ext4 failu sistēmu
+      command: resize2fs /dev/mapper/ubuntu--vg-ubuntu--lv

@@ -1,0 +1,196 @@
+---
+- name: Install cert-manager and Rancher (master1)
+  hosts: master1
+  gather_facts: false
+  vars:
+    rancher_hostname: "rancher.iloto.lldev"
+    rancher_bootstrap_password: "Admin123!Change"   # mainiet uz drošu paroli
+    wildcard_secret_name: "iloto-wildcard-tls"
+    wildcard_secret_source_namespace_candidates:
+      - traefik
+      - default
+      - cert-manager
+    cert_manager_version: "v1.19.1"
+    cert_manager_crd_url: "https://github.com/cert-manager/cert-manager/releases/download/v1.19.1/cert-manager.crds.yaml"
+
+  tasks:
+
+    - name: Ensure Helm repo for Rancher exists
+      kubernetes.core.helm_repository:
+        name: rancher-stable
+        repo_url: https://releases.rancher.com/server-charts/stable
+        force_update: true
+
+    - name: Ensure cert-manager namespace exists
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: cert-manager
+        state: present
+
+    - name: Apply cert-manager CRDs (idempotent)
+      ansible.builtin.shell: |
+        kubectl apply -f {{ cert_manager_crd_url }}
+      register: apply_cert_crds
+      changed_when: "'configured' in apply_cert_crds.stdout or 'created' in apply_cert_crds.stdout or 'unchanged' not in apply_cert_crds.stdout"
+      failed_when: apply_cert_crds.rc != 0 and "'already exists' not in apply_cert_crds.stdout"
+      check_mode: false
+
+    - name: Install cert-manager Helm chart
+      kubernetes.core.helm:
+        name: cert-manager
+        chart_ref: oci://quay.io/jetstack/charts/cert-manager
+        chart_version: "{{ cert_manager_version }}"
+        release_namespace: cert-manager
+        create_namespace: false
+        state: present
+        wait: true
+        wait_timeout: 600s
+
+    - name: Wait for cert-manager deployments to be Available
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        namespace: cert-manager
+        label_selectors:
+          - app.kubernetes.io/name=cert-manager
+      register: cm_deployments
+      until: cm_deployments.resources | length > 0
+      retries: 12
+      delay: 5
+
+    - name: Wait each cert-manager deployment to become Available
+      vars:
+        cm_names: "{{ cm_deployments.resources | map(attribute='metadata.name') | list }}"
+      loop: "{{ cm_names }}"
+      loop_control:
+        loop_var: cm_name
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: "{{ cm_name }}"
+        namespace: cert-manager
+        wait: true
+        wait_timeout: 300
+        wait_condition:
+          type: Available
+          status: "True"
+
+    - name: Ensure cattle-system namespace exists
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: cattle-system
+        state: present
+
+    - name: Check if wildcard TLS secret exists in cattle-system
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        namespace: cattle-system
+        name: "{{ wildcard_secret_name }}"
+      register: wildcard_in_cattle
+      failed_when: false
+
+    - name: Check candidate namespaces for wildcard secret
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        namespace: "{{ item }}"
+        name: "{{ wildcard_secret_name }}"
+      register: candidate_secrets
+      failed_when: false
+      loop: "{{ wildcard_secret_source_namespace_candidates }}"
+      loop_control:
+        loop_var: item
+
+    - name: Find first namespace that has the secret
+      set_fact:
+        source_ns: >-
+          {{
+            candidate_secrets.results
+            | selectattr('resources', 'defined')
+            | selectattr('resources', 'truthy')
+            | map(attribute='resources')
+            | map('first')
+            | map(attribute='metadata')
+            | map(attribute='namespace')
+            | first
+            | default('')
+          }}
+      when: wildcard_in_cattle.resources | length == 0
+
+    - name: Fail if wildcard secret not found anywhere
+      ansible.builtin.fail:
+        msg: "Wildcard TLS secret '{{ wildcard_secret_name }}' not found in candidate namespaces ({{ wildcard_secret_source_namespace_candidates }}). Please create it or add its namespace to the candidate list."
+      when: wildcard_in_cattle.resources | length == 0 and source_ns == ""
+
+    - name: Copy wildcard secret to cattle-system (kubectl)
+      ansible.builtin.shell: |
+        kubectl get secret {{ wildcard_secret_name }} -n {{ source_ns }} -o yaml \
+        | sed "s/namespace: {{ source_ns }}/namespace: cattle-system/" \
+        | kubectl apply -f -
+      when: wildcard_in_cattle.resources | length == 0 and source_ns != ""
+
+
+    - name: Show secret type for verification
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        namespace: cattle-system
+        name: "{{ wildcard_secret_name }}"
+      register: wildcard_after_copy
+
+    - name: Debug secret type (safe)
+      ansible.builtin.debug:
+        msg: >-
+          {% if wildcard_after_copy.resources | length > 0 %}
+          Secret {{ wildcard_secret_name }} in cattle-system type={{ wildcard_after_copy.resources[0].type }}
+          {% else %}
+          Secret {{ wildcard_secret_name }} in cattle-system not found!
+          {% endif %}
+
+    - name: Install Rancher via Helm
+      kubernetes.core.helm:
+        name: rancher
+        chart_ref: rancher-stable/rancher
+        release_namespace: cattle-system
+        create_namespace: false
+        state: present
+        wait: true
+        wait_timeout: 900s
+        values:
+          hostname: "{{ rancher_hostname }}"
+          bootstrapPassword: "{{ rancher_bootstrap_password }}"
+          ingress:
+            tls:
+              source: secret
+            extraTls:
+              - hosts:
+                  - "{{ rancher_hostname }}"
+                secretName: iloto-wildcard-tls
+          privateCA: false
+
+    - name: Wait for Rancher deployment to be available
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: rancher
+        namespace: cattle-system
+        wait: true
+        wait_timeout: 900
+        wait_condition:
+          type: Available
+          status: "True"
+
+    - name: Show Rancher pods
+      ansible.builtin.shell: kubectl get pods -n cattle-system -o wide
+      register: rancher_pods
+
+    - name: Display Rancher pods
+      ansible.builtin.debug:
+        var: rancher_pods.stdout_lines
+
+    - name: Final message
+      ansible.builtin.debug:
+        msg: "Rancher installation finished (if the waits succeeded). Connect to: https://{{ rancher_hostname }} (bootstrap password shown in helm values)."

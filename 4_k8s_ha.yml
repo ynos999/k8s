@@ -73,26 +73,26 @@
     - debug:
         msg: "NTP synchronization = {{ ntp_status.stdout }}"    
 
-    # 1. Uzdevums: Ielādēt nepieciešamos kodola moduļus un padarīt tos noturīgus (br_netfilter)
-    - name: Load overlay and br_netfilter modules
-      community.general.modprobe:
-        name: "{{ item }}"
-        state: present
-      loop:
-        - overlay
-        - br_netfilter
+    # # 1. Uzdevums: Ielādēt nepieciešamos kodola moduļus un padarīt tos noturīgus (br_netfilter)
+    # - name: Load overlay and br_netfilter modules
+    #   community.general.modprobe:
+    #     name: "{{ item }}"
+    #     state: present
+    #   loop:
+    #     - overlay
+    #     - br_netfilter
 
-    # 2. Uzdevums: Iestatīt nepieciešamās sysctl vērtības (lai atļautu trafiku caur tiltu)
-    - name: Enable bridge-netfilter and IP forwarding in sysctl
-      ansible.posix.sysctl:
-        name: "{{ item.key }}"
-        value: "{{ item.value }}"
-        state: present
-        reload: yes
-      loop:
-        - { key: net.bridge.bridge-nf-call-iptables, value: '1' }
-        - { key: net.ipv4.ip_forward, value: '1' }
-      when: ansible_os_family == 'Debian' or ansible_os_family == 'RedHat'
+    # # 2. Uzdevums: Iestatīt nepieciešamās sysctl vērtības (lai atļautu trafiku caur tiltu)
+    # - name: Enable bridge-netfilter and IP forwarding in sysctl
+    #   ansible.posix.sysctl:
+    #     name: "{{ item.key }}"
+    #     value: "{{ item.value }}"
+    #     state: present
+    #     reload: yes
+    #   loop:
+    #     - { key: net.bridge.bridge-nf-call-iptables, value: '1' }
+    #     - { key: net.ipv4.ip_forward, value: '1' }
+    #   when: ansible_os_family == 'Debian' or ansible_os_family == 'RedHat'
 
     - name: Disable UFW
       systemd:

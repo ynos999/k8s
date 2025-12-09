@@ -42,6 +42,9 @@
               virtual_router_id 51
               advert_int 1
 
+              preempt
+              preempt_delay 0
+
               authentication {
                   auth_type PASS
                   auth_pass {{ auth_pass }}

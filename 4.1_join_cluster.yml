@@ -1,41 +1,95 @@
 ---
-# Master1 veic kubeadm init.
+- hosts: all
+  serial: 1
+
+# Master1 veic kubeadm init
 - hosts: master1
   become: yes
   roles:
     - k8s-init-master
 
-# Pārējie master mezgli pievienojas kontrolplānam ar pauzi 60s.
+# Pagaidām, līdz API server gatavs
+# - hosts: master1
+#   become: yes
+#   tasks:
+#     - name: Wait for API server to be ready
+#       command: kubectl get nodes
+#       register: api_check
+#       retries: 20
+#       delay: 10
+#       until: api_check.rc == 0
+#       delegate_to: master1
+
+# Pārējie master mezgli pievienojas kontrolplānam
 - hosts: masters:!master1
   become: yes
   pre_tasks:
-    - name: Gaidīt 30 sekundes pirms pievienošanās CP
+    - name: Gaidīt 30 sekundes pirms pievienošanās pārējos Māster
       pause:
         seconds: 30
   roles:
     - k8s-join-controlplane
 
-# Strādnieki pievienojas kā worker ar pauzi 30s.
+# Strādnieki pievienojas kā worker
 - hosts: workers
   become: yes
   pre_tasks:
-  - name: Gaidīt 30 sekundes pirms pievienošanās Workers
-    pause:
-      seconds: 30
+    - name: Gaidīt 30 sekundes pirms pievienošanās Worker
+      pause:
+        seconds: 30
   roles:
     - k8s-join-workers
 
-
-- name: KUBERNETES Flannel CNI uzstādīšana un tīrīšana
-  hosts: master1          
-  become: yes             
-  # gather_facts: false     # Šeit pārvietotais metadatu lauks
+# Flannel CNI
+- hosts: master1
+  become: yes
   vars:
     flannel_url: "https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml"
     target_path: "/tmp/kube-flannel.yml"
     required_cidr: "172.16.0.0/16"
   roles:
     - flannel
+
+
+
+# ---
+# # Master1 veic kubeadm init.
+# - hosts: master1
+#   become: yes
+#   roles:
+#     - k8s-init-master
+
+# # Pārējie master mezgli pievienojas kontrolplānam ar pauzi 60s.
+# - hosts: masters:!master1
+#   become: yes
+#   pre_tasks:
+#     - name: Gaidīt 30 sekundes pirms pievienošanās CP
+#       pause:
+#         seconds: 30
+#   roles:
+#     - k8s-join-controlplane
+
+# # Strādnieki pievienojas kā worker ar pauzi 30s.
+# - hosts: workers
+#   become: yes
+#   pre_tasks:
+#   - name: Gaidīt 30 sekundes pirms pievienošanās Workers
+#     pause:
+#       seconds: 30
+#   roles:
+#     - k8s-join-workers
+
+
+# - name: KUBERNETES Flannel CNI uzstādīšana un tīrīšana
+#   hosts: master1          
+#   become: yes             
+#   # gather_facts: false     # Šeit pārvietotais metadatu lauks
+#   vars:
+#     flannel_url: "https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml"
+#     target_path: "/tmp/kube-flannel.yml"
+#     required_cidr: "172.16.0.0/16"
+#   roles:
+#     - flannel
 
 # - name: KUBERNETES CNI UZSTĀDĪŠANA (WEAVE NET)
 #   hosts: master1          
