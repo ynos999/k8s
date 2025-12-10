@@ -40,36 +40,61 @@
   command: kubeadm certs certificate-key
   register: cert_key
   when: not kubeadm_admin_conf.stat.exists
-
+  
 - name: Get certificate key (existing cluster)
   shell: kubeadm init phase upload-certs --upload-certs | tail -n1
   register: cert_key
   when: kubeadm_admin_conf.stat.exists
 
-# 5. Join command logic
+# 5. Join command logic (NORMALIZED)
+
+# Extract MASTER join command from init output (new cluster)
 - name: Extract MASTER join command from kubeadm init output
   set_fact:
-    join_cmd_master: "{{ init_out.stdout | regex_search('kubeadm join[\\s\\S]+?--control-plane[^\n]+') }}"
+    join_cmd_master_raw: "{{ init_out.stdout | regex_search('kubeadm join[\\s\\S]+?--control-plane[^\n]+') }}"
   when: not kubeadm_admin_conf.stat.exists
   run_once: true
 
+# Generate MASTER join command (existing cluster)
 - name: Generate MASTER join command (existing cluster)
   command: kubeadm token create --print-join-command --certificate-key {{ cert_key.stdout }}
-  register: join_out
+  register: join_cmd_existing
   when: kubeadm_admin_conf.stat.exists
   run_once: true
 
 - name: Set MASTER join command fact (existing cluster)
   set_fact:
-    join_cmd_master: "{{ join_out.stdout }}"
+    join_cmd_master_raw: "{{ join_cmd_existing.stdout }}"
   when: kubeadm_admin_conf.stat.exists
 
-# 6. Generate worker join command
-- name: Generate worker join command
+
+# Normalize master join command (remove "\" and newlines)
+- name: Normalize MASTER join command
   set_fact:
-    join_cmd_worker: "{{ join_cmd_master | regex_replace('--control-plane.*', '') }}"
+    join_cmd_master: >-
+      {{
+        join_cmd_master_raw
+        | regex_replace('\s*\\\s*$', '')
+        | regex_replace('\s+', ' ')
+        | trim
+      }}
   run_once: true
-  
+  delegate_to: master1
+
+
+# 6. Generate CLEAN worker join command
+- name: Generate CLEAN worker join command
+  set_fact:
+    join_cmd_worker: >-
+      {{
+        join_cmd_master
+        | regex_replace('--control-plane.*', '')
+        | regex_replace('\s+', ' ')
+        | trim
+      }}
+  run_once: true
+  delegate_to: master1
+
 # 7. Debug output
 - debug:
     msg:

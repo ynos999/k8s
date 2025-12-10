@@ -20,8 +20,10 @@ sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm wolf@worker2:~/.ssh/
 sudo chmod 600 ~/.ssh/id_ed25519_vm 
 ---
 # 1. ansible-playbook -i hosts.ini 0_setup.yml
+Palielināt diku volumi.
+# 1.1. ansible-playbook -i hosts_wolf.ini 0_setup_disc.yml
 ---
-2 - 7.yml:
+2 - 10.yml:
 # ansible-playbook -i hosts_wolf.ini 1_master_playbook.yml
 
 # 2. ansible-playbook -i hosts_wolf.ini 2_keepalived.yml

@@ -1,13 +1,17 @@
 ---
+# 1. Debug – redzēt vai komanda ir OK
+- debug:
+    msg: "Final WORKER join CMD: {{ hostvars['master1'].join_cmd_worker }}"
+
+# 2. Pārbaudīt, vai worker jau pievienots
 - name: Pārbaudīt, vai worker jau pievienots
   stat:
     path: /etc/kubernetes/kubelet.conf
   register: kubelet_conf_worker
 
-- name: Pievienot worker mezglus
-  ansible.builtin.shell: "{{ hostvars['master1'].join_cmd_worker | replace('\\n', ' ') | trim }}"
-  args:
-    executable: /bin/bash # Nodrošina, ka komanda tiek izpildīta ar uzticamu čaulu
+# 3. Reāli pievienot worker mezglu
+- name: Pievienot worker mezglus klāsterī
+  shell: "{{ hostvars['master1'].join_cmd_worker }}"
   register: join_output
   changed_when: join_output.rc == 0
-  when: kubelet_conf_worker.stat.exists == false
+  when: not kubelet_conf_worker.stat.exists

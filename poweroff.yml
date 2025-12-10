@@ -1,0 +1,10 @@
+---
+- name: Power off Ubuntu servers
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Power off the servers
+      ansible.builtin.command: shutdown -h now "Shutdown initiated by Ansible"
+      async: 0
+      poll: 0

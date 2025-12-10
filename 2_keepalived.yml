@@ -27,12 +27,24 @@
         state: present
         update_cache: yes
 
+    - name: Create notify script for ARP updates
+      copy:
+        dest: /etc/keepalived/notify_master.sh
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          case $1 in
+              MASTER)
+                  arping -c 3 -A -I {{ interface }} {{ vip }}
+                  ;;
+          esac
+
     - name: Generate keepalived.conf for each master dynamically
       copy:
         dest: /etc/keepalived/keepalived.conf
         content: |
           global_defs {
-            router_id {{ inventory_hostname }}
+              router_id {{ inventory_hostname }}
           }
 
           vrrp_instance VI_1 {
@@ -43,7 +55,7 @@
               advert_int 1
 
               preempt
-              preempt_delay 0
+              preempt_delay 5
 
               authentication {
                   auth_type PASS
@@ -51,10 +63,10 @@
               }
 
               virtual_ipaddress {
-                  {{ vip }} dev {{ interface }} label {{ interface }}:vip
+                  {{ vip }}
               }
 
-              allow_shared_ip
+              notify_master "/etc/keepalived/notify_master.sh MASTER"
           }
 
     - name: Restart keepalived service

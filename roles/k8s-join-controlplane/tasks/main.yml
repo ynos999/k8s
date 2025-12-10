@@ -1,14 +1,16 @@
 ---
+# 1. Pārbaudīt, vai mezgls jau ir control-plane
 - name: Pārbaudīt, vai master jau pievienots
   stat:
-    path: /etc/kubernetes/kubelet.conf
-  register: kubelet_conf
+    path: /etc/kubernetes/pki/ca.key
+  register: master_joined
 
+# 2. Ja nav – pievienot klāsterim kā master (control-plane)
 - name: Pievienot pārējos master mezglus
-  shell: "{{ hostvars['master1'].join_cmd_master | trim }}"  # Izmantojiet 'trim' filtru, lai noņemtu liekas atstarpes/jaunas rindas
-  when: kubelet_conf.stat.exists == false
+  shell: "{{ hostvars['master1'].join_cmd_master | trim }}"
+  when: not master_joined.stat.exists
 
-# Izveidot .kube direktoriju wolf lietotājam
+# 3. Izveidot ~/.kube direktoriju wolf lietotājam
 - name: Izveidot ~/.kube direktoriju
   become: yes
   file:
@@ -17,17 +19,15 @@
     owner: wolf
     group: wolf
     mode: '0755'
+  when: master_joined.stat.exists
 
-# Kopēt kubeconfig uz wolf profilu
+# 4. Kopēt kubeconfig uz wolf profilu
 - name: Kopēt kubeconfig uz wolf profilu
   become: yes
-  command: cp /etc/kubernetes/admin.conf /home/wolf/.kube/config
-
-# Labot faila īpašnieku un tiesības
-- name: Labot faila īpašnieku un tiesības
-  become: yes
-  file:
-    path: /home/wolf/.kube/config
+  copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /home/wolf/.kube/config
     owner: wolf
     group: wolf
     mode: '0600'
+  when: master_joined.stat.exists
