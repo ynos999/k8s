@@ -54,14 +54,14 @@
         owner: wolf
         group: wolf
         mode: '0600'
-    # ------------------------------------
+
     - name: Fix SSH config — replace PasswordAuthentication yes → no
       ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^PasswordAuthentication yes'
         line: 'PasswordAuthentication no'
         state: present
-        backup: yes  # drošībai
+        backup: yes 
     
     - name: Fix SSH config — replace PermitRootLogin yes → no
       ansible.builtin.lineinfile:

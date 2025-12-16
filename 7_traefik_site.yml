@@ -40,20 +40,6 @@
         state: present
         wait: false
 
-    # - name: 3.1.2. Uzstādīt Traefik Ingress Controller
-    #   kubernetes.core.helm:
-    #     name: traefik
-    #     chart_ref: traefik/traefik
-    #     release_namespace: traefik
-    #     create_namespace: true
-    #     # Tiek izmantots FAILS NO ANSIBLE KONTROLIERA
-    #     values_files:
-    #       - traefik-values.yaml 
-    #     state: present
-    #     # wait: yes
-    #     wait: false
-    #     # wait_timeout: 300s
-
     # APLIKĀCIJAS INSTALĀCIJA (HELM)
 
     - name: 3.2.1. Pievienot Bitnami Helm repozitoriju (novērš kļūdu)

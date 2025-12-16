@@ -1,61 +1,47 @@
-#### ssh -i ~/.ssh/id_rsa_hetzner wolf@46.62.220.209
------------------------------
-1. Noskaidrot OS un versiju
-### cat /etc/os-release
 ### sudo apt update && sudo apt upgrade -y
-# adduser wolf
-# usermod -aG sudo wolf
+# adduser YourUser
+# usermod -aG sudo YourUser
 ### sudo -i
 ### visudo
-### wolf ALL=(ALL) NOPASSWD:ALL
+### YourUser ALL=(ALL) NOPASSWD:ALL
 ### sudo visudo -c
 ### sudo passwd -l root
 ### sudo systemctl stop ufw && sudo systemctl disable ufw
 
-Uz katra servera atsevišķi:
-sudo hostnamectl set-hostname master1 && hostnamectl
-sudo hostnamectl set-hostname master2 && hostnamectl
-sudo hostnamectl set-hostname master3 && hostnamectl
-sudo hostnamectl set-hostname worker1 && hostnamectl
-sudo hostnamectl set-hostname worker2 && hostnamectl
+#### sudo hostnamectl set-hostname master1 && hostnamectl
+#### sudo hostnamectl set-hostname master2 && hostnamectl
+#### sudo hostnamectl set-hostname master3 && hostnamectl
+#### sudo hostnamectl set-hostname worker1 && hostnamectl
+#### sudo hostnamectl set-hostname worker2 && hostnamectl
 
 ### ip a
 ### sudo nano /etc/hosts
 
-46.62.220.209 master1
-10.105.28.44 master2
-10.105.28.45 master3
-10.10.1.20 worker1
-10.105.28.47 worker2
-
 ### sudo ufw disable && sudo systemctl stop ufw && sudo systemctl disable ufw
 If using UFW or another firewall, open the following ports: 6443, 2379, 2380, 10250, 10259, 10257. 
 -----------------------------
-2. Iestatīt SSH piekļuvi tikai ar ed25519 atslēgām (no sava datora + starp nodēm, paroles off)
+2. SSH key with ed25519 (no sava datora + starp nodēm, paroles off)
 # sudo ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519_vm
 # nano ~/.ssh/authorized_keys
 cat ~/.ssh/id_ed25519_vm.pub >> ~/.ssh/authorized_keys
 # sudo chmod 600 ~/.ssh/id_ed25519_vm
 
-All VM vienādu paroli:
-# sudo passwd wolf
+# sudo passwd YourUser
+# sudo ssh-copy-id -i ~/.ssh/id_ed25519_vm.pub YourUser@master1
+# sudo ssh-copy-id -i ~/.ssh/id_ed25519_vm.pub YourUser@master2
+# sudo ssh-copy-id -i ~/.ssh/id_ed25519_vm.pub YourUser@master3
+# sudo ssh-copy-id -i ~/.ssh/id_ed25519_vm.pub YourUser@worker1
+# sudo ssh-copy-id -i ~/.ssh/id_ed25519_vm.pub YourUser@worker2
 
-# sudo ssh-copy-id -i ~/.ssh/id_ed25519_vm.pub user@master1
-# sudo ssh-copy-id -i ~/.ssh/id_ed25519_vm.pub user@master2
-# sudo ssh-copy-id -i ~/.ssh/id_ed25519_vm.pub user@master3
-# sudo ssh-copy-id -i ~/.ssh/id_ed25519_vm.pub user@worker1
-# sudo ssh-copy-id -i ~/.ssh/id_ed25519_vm.pub user@worker2
+sudo ssh -i ~/.ssh/id_ed25519_vm YourUser@worker1
+sudo ssh -i ~/.ssh/id_ed25519_vm YourUser@master1
 
-sudo ssh -i ~/.ssh/id_ed25519_vm wolf@worker1
-sudo ssh -i ~/.ssh/id_ed25519_vm wolf@master1
-
-sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm wolf@master1:~/.ssh/
-sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm wolf@master2:~/.ssh/
-sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm wolf@master3:~/.ssh/
-sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm wolf@worker1:~/.ssh/
-sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm wolf@worker2:~/.ssh/
+sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm YourUser@master1:~/.ssh/
+sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm YourUser@master2:~/.ssh/
+sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm YourUser@master3:~/.ssh/
+sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm YourUser@worker1:~/.ssh/
+sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm YourUser@worker2:~/.ssh/
 # sudo nano /etc/ssh/sshd_config
-
 PasswordAuthentication no
 PermitRootLogin no
 PubkeyAuthentication yes
@@ -202,15 +188,9 @@ sudo apt-mark hold kubelet kubeadm kubectl
 sudo kubeadm version
 sudo systemctl enable --now kubelet
 
-# Labojam controlPlaneEndpoint, vip: 10.10.1.30 metallb_ip_range: "10.10.1.30-10.10.1.30", demo_host: demo.www.latloto.lv
+# Labojam controlPlaneEndpoint, vip: 192.168.4.190 metallb_ip_range: "192.168.4.190-192.168.4.190", demo_host: demo.www.latloto.lv
 # sudo systemctl status keepalived
 # ip a show enp7s0
-
-
-master1 192.168.1.199
-master2 192.168.1.198
-master3 192.168.1.197
-VIP: 192.168.1.190
 ===
 Uz master1 jāizpilda (controlPlaneEndpoint labojam):
 
@@ -218,7 +198,7 @@ cat <<EOF | sudo tee kubeadm-config.yaml
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: ClusterConfiguration
 kubernetesVersion: stable-1.33
-controlPlaneEndpoint: "192.168.1.190:6443"
+controlPlaneEndpoint: "192.168.4.190:6443"
 networking:
   podSubnet: "172.16.0.0/16"
   serviceSubnet: "172.17.0.0/12"
@@ -248,28 +228,8 @@ Regular user:
 mkdir -p $HOME/.kube
 sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
 sudo chown $(id -u):$(id -g) $HOME/.kube/config
-
 Alternatively, if you are the root user, you can run:
   export KUBECONFIG=/etc/kubernetes/admin.conf
-
-You should now deploy a pod network to the cluster.
-Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
-  https://kubernetes.io/docs/concepts/cluster-administration/addons/
-
-You can now join any number of control-plane nodes running the following command on each as root:
-
-  kubeadm join 192.168.1.190:6443 --token mn8ngd.c2icinibzb7ziity \
-        --discovery-token-ca-cert-hash sha256:be73ebeed224653500dcf3ee81c8a79f4ca354c6cec01b9c2fc13297d52a6380 \
-        --control-plane --certificate-key 5eaea2cba3f2977e32d02fff4e8a9f8dc7a3d80f83b40bbf632bbf6da4628762
-
-Please note that the certificate-key gives access to cluster sensitive data, keep it secret!
-As a safeguard, uploaded-certs will be deleted in two hours; If necessary, you can use
-"kubeadm init phase upload-certs --upload-certs" to reload certs afterward.
-
-Then you can join any number of worker nodes by running the following on each as root:
-
-kubeadm join 192.168.1.190:6443 --token mn8ngd.c2icinibzb7ziity \
-        --discovery-token-ca-cert-hash sha256:be73ebeed224653500dcf3ee81c8a79f4ca354c6cec01b9c2fc13297d52a6380
 
 kubectl get nodes
 kubectl get po -A
@@ -291,13 +251,13 @@ sudo rm -rf /etc/cni/net.d/weave-kube*
 sudo systemctl restart kubelet
 
 ---
-6. Pievienot pārējās nodes un pārliecināties, ka viss strādā.
+Pievienot pārējās nodes un pārliecināties, ka viss strādā.
 kubectl get nodes
 kubectl get po -A
 kubectl get pods -n kube-system
 
 ---
-7. Uzlikt MetalLB (Layer 2) + Traefik kā Ingress Controller
+Uzlikt MetalLB (Layer 2) + Traefik kā Ingress Controller
 
 # Izpildīt UZ MASTER 1 VM
 
@@ -357,22 +317,6 @@ EOF
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 helm repo add traefik https://traefik.github.io/charts
 helm repo update
-
-helm install traefik traefik/traefik \
-  --namespace kube-system \
-  --set service.type=LoadBalancer \
-  --set service.loadBalancerIP="192.168.1.190" \
-  --set service.annotations."metallb\.io/address-pool"="external-ip-pool" \
-  --set providers.kubernetesIngress.ingressClass=traefik \
-  --set providers.kubernetesIngress.publishedService.enabled=true \
-  --set providers.kubernetesIngress.publishedService.ingressClassName=traefik
-
-kubectl get svc traefik -n kube-system
-
-8. Panākt, lai viens un tas pats virtuālais IP apkalpo gan Kubernetes API, gan ārējo HTTP/HTTPS trafiku
-9. Atrisināt ARP konfliktu ar KeepAlived (allow-shared-ip triks)  
-10. Uzlikt TLS sertifikātu, 80 → 443 redirect un vienkāršu demo URL ar HTTPS
-
 
 # Uz Master 1 VM
 cat <<EOF | kubectl apply -f -
@@ -458,33 +402,10 @@ kubectl create secret tls default-tls-secret --key tls.key --cert tls.crt --dry-
 
 SSH key-only | KeepAlived | kubeadm HA ar VIP | CRI-O | Weave Net | MetalLB L2 + shared IP | Traefik + savs TLS | Helm + Ingress Klasisks on-prem HA k8s scenārijs no A līdz Z.
 
-===================
-## export CRIO_VERSION=1.25
-## echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/ /" | tee /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
-## echo "deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/$CRIO_VERSION/$OS/ /" | tee /etc/apt/sources.list.d/devel:kubic:libcontainers:stable:cri-o:$CRIO_VERSION.list
-## curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/libcontainers-stable-keyring.gpg
-
-## sudo rm -f /etc/apt/sources.list.d/devel:kubic:libcontainers:stable:cri-o:*
-## sudo rm -f /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
-## sudo rm -f /etc/apt/sources.list.d/devel:kubic:libcontainers:*
-## sudo rm -f /etc/apt/keyrings/*cri-o*
-
-## curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-## echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /' | tee /etc/apt/sources.list.d/kubernetes.list
-===================
-
 # kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.3/config/manifests/metallb-native.yaml
 # kubectl delete -f https://raw.githubusercontent.com/metallb/metallb/v0.14.3/config/manifests/metallb-native.yaml
 
 https://hostman.com/tutorials/how-to-install-a-kubernetes-cluster-on-ubuntu/
-
-===================================================
---control-plane-endpoint	10.10.1.30:6443	Obligāts HA klasterim. Norāda uz Virtuālo IP (VIP), ko uztur KeepAlived. Visas noder pievienosies caur šo adresi.
---apiserver-bind-address	10.10.1.10	Kritiski svarīgs! Norāda, ka API serverim ir jāsaistās ar iekšējo IP adresi (jūsu enp7s0 adrese), lai visi klastera iekšējie komponenti (Etcd, Kubelets) izmantotu iekšējo tīklu.
---upload-certs	N/A	Nodrošina, ka sertifikāti (kas nepieciešami citiem masteriem) tiek automātiski ielādēti klasterī (Secret), lai tos varētu izmantot pievienošanās procesā.
---pod-network-cidr	10.244.0.0/16	Obligāts CNI iestatīšanai. Tīkla diapazons, ko izmantos Pods (standarta diapazons, ko izmanto Weave Net).
---cri-socket	unix:///var/run/crio/crio.sock	Norāda CRI izpildlaiku. Šeit tiek norādīts CRI-O socket, kuru jūs tikko veiksmīgi instalējāt.
-===================================================
 
 # sudo kubeadm token create --print-join-command
 # sudo kubeadm init phase upload-certs --upload-certs
@@ -952,11 +873,170 @@ wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/sh
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
 sudo apt update && sudo apt install vault
 
-
-
 # Ielādē br_netfilter moduli
 sudo modprobe br_netfilter
 # Pārbauda, vai modulis ir ielādēts
 lsmod | grep br_netfilter
 echo 'br_netfilter' | sudo tee /etc/modules-load.d/k8s.conf
 sudo systemctl restart kubelet
+
+
+Uz master1 jāizpilda (controlPlaneEndpoint labojam):
+
+cat <<EOF | sudo tee kubeadm-config.yaml
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: stable-1.33
+controlPlaneEndpoint: "192.168.1.190:6443"
+networking:
+  podSubnet: "172.16.0.0/16"
+  serviceSubnet: "172.17.0.0/12"
+
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+nodeRegistration:
+  name: "master1"
+  criSocket: "unix:///var/run/crio/crio.sock"
+EOF
+===
+sudo kubeadm init --config=kubeadm-config.yaml --upload-certs
+
+----
+Reset kubeadm:
+sudo kubeadm reset -f
+sudo systemctl stop kubelet
+sudo pkill kubelet
+sudo lsof -i :6443
+sudo lsof -i :2379
+sudo rm -rf /var/lib/etcd/*
+----
+
+===
+Regular user:
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+Alternatively, if you are the root user, you can run:
+  export KUBECONFIG=/etc/kubernetes/admin.conf
+
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+kubectl get nodes
+kubectl get po -A
+kubectl get pods -n kube-system
+
+kubeadm token create
+kubeadm token create --print-join-command
+Then reload and restart kubelet:
+sudo systemctl daemon-reload
+sudo systemctl restart kubelet
+
+# Pēc kubeadm init un konfigurācijas iestatīšanas uz Master 1 weave
+kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s.yaml
+
+Labālk ir:
+https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz
+https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-arm64.tar.gz
+
+Calico, Flannel, Weave
+
+Dzēst Cilium:
+export KUBECONFIG=/etc/kubernetes/admin.conf
+helm uninstall cilium -n kube-system
+kubectl -n kube-system delete ds cilium cilium-envoy
+kubectl -n kube-system delete deploy cilium-operator
+kubectl -n kube-system delete pod -l k8s-app=cilium
+kubectl get crds | grep cilium | awk '{print $1}' | xargs kubectl delete crd
+kubectl get pods -n kube-system -l k8s-app=cilium
+kubectl get crds | grep cilium
+
+---
+7. Uzlikt MetalLB (Layer 2) + Traefik kā Ingress Controller
+vai
+# Uz Master 1 VM Helm:
+
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+helm repo add traefik https://traefik.github.io/charts
+helm repo update
+
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: metallb-system
+  name: config
+data:
+  config: |
+    address-pools:
+    - name: layer2-pool
+      protocol: layer2
+      addresses:
+      - 10.10.0.30-10.10.0.30
+EOF
+
+JĀLABO IP!
+
+helm install traefik traefik/traefik \
+  --namespace kube-system \
+  --set service.type=LoadBalancer \
+  --set service.loadBalancerIP="10.10.1.30" \
+  --set service.annotations."metallb\.universe\.tf/address-pool"="external-ip-pool" \
+  --set providers.kubernetesIngress.ingressClass=traefik \
+  --set providers.kubernetesIngress.publishedService.enabled=true \
+  --set providers.kubernetesIngress.publishedService.ingressClassName=traefik
+
+kubectl get svc traefik -n kube-system
+
+# ansible-playbook -i hosts_wolf.ini 6_metalb_traefik.yml
+kubectl create namespace metallb-system
+kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey="$(openssl rand -base64 128)"
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.3/config/manifests/metallb-native.yaml
+
+kubectl get pods -n metallb-system
+
+JĀLABO POOL!
+kubectl get svc webhook-service -n metallb-system
+
+vai:
+helm upgrade --install metallb metallb/metallb --namespace metallb-system
+nano metallb-config.yaml
+
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  namespace: metallb-system
+  name: layer2-pool
+spec:
+  addresses:
+    - 10.10.1.30-10.10.1.30
+
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  namespace: metallb-system
+  name: l2-advert
+
+kubectl apply -f metallb-config.yaml
+
+8. Panākt, lai viens un tas pats virtuālais IP apkalpo gan Kubernetes API, gan ārējo HTTP/HTTPS trafiku
+9. Atrisināt ARP konfliktu ar KeepAlived (allow-shared-ip triks)  
+10. Uzlikt TLS sertifikātu, 80 → 443 redirect un vienkāršu demo URL ar HTTPS
+
+Open Leans tunelis:
+ssh -i .\id_ed25519_vm -L 6443:192.168.1.199:6443 wolf@192.168.1.199
+scp -i .\id_ed25519_vm wolf@192.168.1.199:~/.kube/config C:\Users\wolf\.kube\
+ssh -i .\id_ed25519_vm -L 6443:192.168.1.199:6443 -N wolf@192.168.1.199
+
+netstat -ano | findstr 6443
+
+    server: https://localhost:6443
+    insecure-skip-tls-verify: true
+
+kubectl get nodes     
+
+choco install kubernetes-helm
