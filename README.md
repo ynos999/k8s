@@ -18,8 +18,6 @@
 #### 0.6 Edit 2_keepalived.yml vip: "10.10.1.30/32", interface: "enp7s0" (ip a) Ubuntu.
 #### 0.7 Edit to your IP in file 6.1_metalb.yml vip: 10.10.1.30 metallb_ip_range: "10.10.1.30-10.10.1.30", my demo_host: demo.latloto.lv
 #### 0.8 Copy manual key or use ansible (0_setup.yml)
-#### sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm User@master1:~/.ssh/
-#### sudo chmod 600 ~/.ssh/id_ed25519_vm
 #### Edit file k8s-init-master main.yml and k8s-join-controlplane main.yml my user wolf to Yours.
 ===
 ## 1. ansible-playbook -i hosts.ini 0_setup.yml
