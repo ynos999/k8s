@@ -1,4 +1,4 @@
-# With ansible create K8S cluster. Keepalive, crio, traefik, CNI flanell, metallb, ansible awx + web sites (Ubuntu 24.04)
+# With ansible create K8S cluster. Keepalive, crio, traefik, CNI flanell, metallb, ansible awx + websites (Ubuntu 24.04)
 ##
 #### First steps install 3 master and 2 worke nodes with Ubuntu 24.04.
 ##
