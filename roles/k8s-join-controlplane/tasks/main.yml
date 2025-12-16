@@ -7,7 +7,10 @@
 
 # 2. Ja nav – pievienot klāsterim kā master (control-plane)
 - name: Pievienot pārējos master mezglus
-  shell: "{{ hostvars['master1'].join_cmd_master | trim }}"
+  become: yes
+  shell: "{{ hostvars['master1'].join_cmd_master }}"
+  args:
+    creates: /etc/kubernetes/pki/ca.key
   when: not master_joined.stat.exists
 
 # 3. Izveidot ~/.kube direktoriju wolf lietotājam
@@ -27,6 +30,7 @@
   copy:
     src: /etc/kubernetes/admin.conf
     dest: /home/wolf/.kube/config
+    remote_src: yes
     owner: wolf
     group: wolf
     mode: '0600'

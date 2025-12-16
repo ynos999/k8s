@@ -6,7 +6,6 @@
   register: kubeadm_admin_conf
 
 # 2. Create kubeadm config (only for first init)
-# Pēc uzdevuma bija serviceSubnet: "172.17.0.0/12"
 - name: Create kubeadm config
   copy:
     dest: /root/kubeadm-config.yaml
@@ -27,7 +26,7 @@
         criSocket: "unix:///var/run/crio/crio.sock"
   when: not kubeadm_admin_conf.stat.exists
 
-# 3. Run kubeadm init (first master only)
+# 3. kubeadm init
 - name: kubeadm init on master1
   command: kubeadm init --config=/root/kubeadm-config.yaml --upload-certs
   register: init_out
@@ -35,92 +34,54 @@
     creates: /etc/kubernetes/admin.conf
   when: not kubeadm_admin_conf.stat.exists
 
-# 4. CERT KEY generation logic
-- name: Generate certificate key (new cluster)
-  command: kubeadm certs certificate-key
-  register: cert_key
-  when: not kubeadm_admin_conf.stat.exists
-  
-- name: Get certificate key (existing cluster)
-  shell: kubeadm init phase upload-certs --upload-certs | tail -n1
-  register: cert_key
-  when: kubeadm_admin_conf.stat.exists
-
-# 5. Join command logic (NORMALIZED)
-
-# Extract MASTER join command from init output (new cluster)
-- name: Extract MASTER join command from kubeadm init output
-  set_fact:
-    join_cmd_master_raw: "{{ init_out.stdout | regex_search('kubeadm join[\\s\\S]+?--control-plane[^\n]+') }}"
-  when: not kubeadm_admin_conf.stat.exists
+# 4. Upload certs
+- name: Upload certificates and get certificate key
+  command: kubeadm init phase upload-certs --upload-certs
+  register: certs
+  become: yes
   run_once: true
 
-# Generate MASTER join command (existing cluster)
-- name: Generate MASTER join command (existing cluster)
-  command: kubeadm token create --print-join-command --certificate-key {{ cert_key.stdout }}
-  register: join_cmd_existing
-  when: kubeadm_admin_conf.stat.exists
+# 5. Generate join commands
+- name: Generate base join command
+  command: kubeadm token create --print-join-command
+  register: join_base
+  become: yes
   run_once: true
 
-- name: Set MASTER join command fact (existing cluster)
+- name: Set join commands facts
   set_fact:
-    join_cmd_master_raw: "{{ join_cmd_existing.stdout }}"
-  when: kubeadm_admin_conf.stat.exists
-
-
-# Normalize master join command (remove "\" and newlines)
-- name: Normalize MASTER join command
-  set_fact:
+    join_cmd_worker: "{{ join_base.stdout }}"
     join_cmd_master: >-
-      {{
-        join_cmd_master_raw
-        | regex_replace('\s*\\\s*$', '')
-        | regex_replace('\s+', ' ')
-        | trim
-      }}
+      {{ join_base.stdout }}
+      --control-plane
+      --certificate-key {{ certs.stdout_lines[-1] }}
   run_once: true
   delegate_to: master1
 
-
-# 6. Generate CLEAN worker join command
-- name: Generate CLEAN worker join command
-  set_fact:
-    join_cmd_worker: >-
-      {{
-        join_cmd_master
-        | regex_replace('--control-plane.*', '')
-        | regex_replace('\s+', ' ')
-        | trim
-      }}
-  run_once: true
-  delegate_to: master1
-
-# 7. Debug output
+# 6. Debug join commands
 - debug:
     msg:
       - "MASTER JOIN: {{ join_cmd_master }}"
       - "WORKER JOIN: {{ join_cmd_worker }}"
+  run_once: true
 
-# 8. kubeconfig for wolf user
-- name: Create ~/.kube
-  become: yes
+# 7. Kubeconfig for wolf
+- name: Create ~/.kube directory
   file:
     path: /home/wolf/.kube
     state: directory
     owner: wolf
     group: wolf
     mode: '0755'
-
-- name: Copy kubeconfig
   become: yes
-  command: cp /etc/kubernetes/admin.conf /home/wolf/.kube/config
-  when: kubeadm_admin_conf.stat.exists
 
-- name: Fix kubeconfig permissions
-  become: yes
-  file:
-    path: /home/wolf/.kube/config
+- name: Copy kubeconfig to wolf user
+  copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /home/wolf/.kube/config
+    remote_src: yes
     owner: wolf
     group: wolf
     mode: '0600'
+  become: yes
   when: kubeadm_admin_conf.stat.exists

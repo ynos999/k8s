@@ -18,7 +18,8 @@
 ## 0.7 Edit to your IP in file 6.1_metalb.yml vip: 10.10.1.30 metallb_ip_range: "10.10.1.30-10.10.1.30", my demo_host: demo.latloto.lv
 # 0.8 Copy manual key or use ansible (0_setup.yml)
 #### sudo scp -i ~/.ssh/id_ed25519_vm ~/.ssh/id_ed25519_vm User@master1:~/.ssh/
-#### sudo chmod 600 ~/.ssh/id_ed25519_vm 
+#### sudo chmod 600 ~/.ssh/id_ed25519_vm
+#### Edit file k8s-init-master main.yml and k8s-join-controlplane main.yml my user wolf to Yours.
 ===
 ## 1. ansible-playbook -i hosts.ini 0_setup.yml
 #### If you need add second disc to volume use:
@@ -35,3 +36,14 @@
 ##
 ### ansible-playbook -i hosts_wolf.ini restart.yml or poweroff.yml.
 ### 12_install_rancher_full.yaml doesn't work because need high CPU and RAM.
+##
+### nano /etc/hosts in your computer (MAC). Windows is different.
+#### 192.168.4.190.  hello.iloto.lldev
+#### 192.168.4.190   data.iloto.lldev
+#### 192.168.4.190   manual.iloto.lldev
+#### 192.168.4.190   awx.iloto.lldev
+
+#### Add certificate to web browser: latloto-ca.crt
+#### http://hello.iloto.lldev
+#### https://awx.iloto.lldev
+#### kubectl get secret ansible-awx-admin-password -o jsonpath="{.data.password}" -n awx | base64 --decode ; echo
