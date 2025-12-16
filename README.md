@@ -25,9 +25,13 @@
 #### openssl req -new -key wildcard.iloto.lldev.key -out wildcard.iloto.lldev.csr -subj "/C=LV/ST=Riga/L=Riga/O=Latloto/OU=IT/CN=*.iloto.lldev"
 #### openssl x509 -req -in wildcard.iloto.lldev.csr -CA latloto-intermediate-server-v2.crt -CAkey latloto-intermediate-server-v2.key -CAcreateserial -out wildcard.iloto.lldev.crt -days 825 -sha256
 #### cat wildcard.iloto.lldev.crt latloto-intermediate-server-v2.crt latloto-ca.crt > combined-chain.crt
+
 ### Import to web browser:
+### cat latloto-intermediate-server-v2.crt latloto-intermediate-server-v1.crt > intermediate-chain.crt (Edit file because space need).
 ###
-### openssl pkcs12 -export -out wildcard.iloto.lldev.pfx -inkey wildcard.iloto.lldev.key -in wildcard.iloto.lldev.crt -certfile latloto-intermediate-server-v2.crt
+### openssl x509 -in intermediate-chain.crt -text -noout
+### openssl pkcs12 -export -out wildcard.iloto.lldev.pfx -inkey wildcard.iloto.lldev.key -in wildcard.iloto.lldev.crt -certfile intermediate-chain.crt
+###
 ### 0.5 Edit /etc/hosts 0_setup.yml, master1, master2...
 ### 0.6 Edit 2_keepalived.yml vip: "10.10.1.30/32", interface: "enp7s0" (ip a) Ubuntu.
 ### 0.7 Edit to your IP in file 6.1_metalb.yml vip: 10.10.1.30 metallb_ip_range: "10.10.1.30-10.10.1.30", my demo_host: demo.latloto.lv

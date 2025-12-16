@@ -2,3 +2,5 @@
 private.ppk
 id_ed25519_vm
 id_ed25519_vm.pub
+intermediate-chain.crt
+wildcard.iloto.lldev.pfx
