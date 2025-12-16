@@ -30,6 +30,7 @@
 #### or manual use step by step:
 ## 2. ansible-playbook -i hosts_wolf.ini 2_keepalived.yml
 ## 3. ansible-playbook -i hosts_wolf.ini 3_ca_import_latloto.yml
+### Edit file 3_ca_import_latloto.yml - vars if use another certificates.
 ## 4. ansible-playbook -i hosts_wolf.ini 4_k8s_ha.yml etc... 5,6,7,8,9,10...
 ###
 #### ansible-playbook -i hosts_wolf.ini restart.yml or poweroff.yml.
