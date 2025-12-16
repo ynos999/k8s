@@ -36,7 +36,7 @@
 ## 4. ansible-playbook -i hosts_wolf.ini 4_k8s_ha.yml etc... 5,6,7,8,9,10...
 ##
 ## ansible-playbook -i hosts_wolf.ini restart.yml or poweroff.yml.
-### 12_install_rancher_full.yaml doesn't work because need high CPU and RAM.
+#### 12_install_rancher_full.yaml doesn't work because need high CPU and RAM.
 ##
 ### nano /etc/hosts in your computer (MAC). Windows is different.
 #### 192.168.4.190.  hello.iloto.lldev
